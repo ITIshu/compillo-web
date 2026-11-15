@@ -1,0 +1,265 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'ishantsaraogi35@gmail.com';
+    }
+
+    function isValidHostedApp(data) {
+      return data.keys().hasAll([
+        'slug', 'ownerId', 'ownerName', 'title', 'category',
+        'mode', 'files', 'isPublic', 'likesCount', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'slug', 'ownerId', 'ownerName', 'title', 'description', 'category',
+        'mode', 'entryFile', 'files', 'isPublic', 'likesCount', 'createdAt', 'updatedAt'
+      ])
+      && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 50
+      && data.slug.matches('^[a-z0-9][a-z0-9\\-]{0,48}[a-z0-9]?$')
+      && data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128
+      && data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 80
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 100
+      && (!('description' in data) || (data.description is string && data.description.size() <= 300))
+      && data.category in ['Web Apps', 'Python Backends', 'Calculators & Tools', 'Student Labs']
+      && data.mode in ['calculator', 'custom-static', 'custom-python']
+      && (!('entryFile' in data) || (data.entryFile is string && data.entryFile.size() <= 120))
+      && data.files is list && data.files.size() <= 50
+      && (data.files.size() == 0 || data.files[0] is map)
+      && data.isPublic is bool
+      && data.likesCount is int && data.likesCount >= 0 && data.likesCount <= 1000000;
+    }
+
+    function isValidHostedAppLike(data) {
+      return data.keys().hasAll(['userId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'createdAt'])
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && data.createdAt == request.time;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+        'userId', 'displayName', 'solvedCount', 'currentStreak', 'bestRuntimeMs', 'lastSolvedDate', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'userId', 'displayName', 'photoUrl', 'solvedCount', 'currentStreak', 'bestRuntimeMs', 'lastSolvedDate', 'updatedAt'
+      ])
+      && data.userId is string && data.userId == request.auth.uid
+      && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+      && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 300))
+      && data.solvedCount is int && data.solvedCount >= 0 && data.solvedCount <= 10000
+      && data.currentStreak is int && data.currentStreak >= 0 && data.currentStreak <= 3650
+      && data.bestRuntimeMs is number && data.bestRuntimeMs >= 0 && data.bestRuntimeMs <= 60000
+      && data.lastSolvedDate is string && data.lastSolvedDate.size() >= 4 && data.lastSolvedDate.size() <= 20;
+    }
+
+    function isValidCertificate(data) {
+      return data.keys().hasAll(['certId', 'userId', 'recipientName', 'courseTitle', 'score', 'issuedAt'])
+        && data.keys().hasOnly(['certId', 'userId', 'recipientName', 'courseTitle', 'score', 'issuedAt'])
+        && data.certId is string && data.certId.size() >= 4 && data.certId.size() <= 64
+        && data.userId is string && data.userId == request.auth.uid
+        && data.recipientName is string && data.recipientName.size() >= 1 && data.recipientName.size() <= 80
+        && data.courseTitle is string && data.courseTitle.size() >= 1 && data.courseTitle.size() <= 120
+        && data.score is int && data.score >= 0 && data.score <= 100;
+    }
+
+    function isValidCollabRoom(data) {
+      return data.keys().hasAll(['roomId', 'hostUid', 'hostName', 'mode', 'activeFilePath', 'updatedAt'])
+        && data.keys().hasOnly(['roomId', 'hostUid', 'hostName', 'mode', 'activeFilePath', 'updatedAt'])
+        && data.roomId is string && data.roomId.size() >= 3 && data.roomId.size() <= 64
+        && data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128
+        && data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 80
+        && data.mode in ['edit', 'readonly']
+        && data.activeFilePath is string && data.activeFilePath.size() >= 1 && data.activeFilePath.size() <= 120;
+    }
+
+    function isValidLeetCodeProgress(data) {
+      return data.keys().hasAll([
+        'userId', 'titleSlug', 'frontendId', 'title', 'difficulty', 'language', 'status', 'code', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'userId', 'titleSlug', 'frontendId', 'title', 'difficulty', 'language', 'status', 'code', 'notes', 'runtimeMs', 'updatedAt'
+      ])
+      && data.userId is string && data.userId == request.auth.uid
+      && data.titleSlug is string && data.titleSlug.size() >= 1 && data.titleSlug.size() <= 120
+      && data.titleSlug.matches('^[a-z0-9\\-]+$')
+      && data.frontendId is string && data.frontendId.size() >= 1 && data.frontendId.size() <= 16
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 150
+      && data.difficulty in ['Easy', 'Medium', 'Hard']
+      && data.language in ['python3', 'javascript', 'cpp']
+      && data.status in ['attempted', 'solved']
+      && data.code is string && data.code.size() <= 60000
+      && (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000))
+      && (!('runtimeMs' in data) || (data.runtimeMs is number && data.runtimeMs >= 0 && data.runtimeMs <= 60000));
+    }
+
+    // 1. Hosted Apps & Public Community Gallery
+    match /hostedApps/{slug} {
+      allow get: if isValidId(slug) && (resource == null || existing().isPublic == true || (isSignedIn() && existing().ownerId == request.auth.uid) || isAdmin());
+      allow list: if existing().isPublic == true || (isSignedIn() && existing().ownerId == request.auth.uid) || isAdmin();
+
+      allow create: if isSignedIn()
+        && isValidId(slug)
+        && isValidHostedApp(incoming())
+        && incoming().slug == slug
+        && incoming().ownerId == request.auth.uid
+        && incoming().likesCount == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(slug)
+        && isValidHostedApp(incoming())
+        && incoming().slug == existing().slug
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().ownerId == request.auth.uid
+            && incoming().likesCount == existing().likesCount
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'description', 'category', 'mode', 'entryFile', 'files', 'isPublic', 'updatedAt'
+            ])
+          )
+          || (
+            existing().isPublic == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['likesCount', 'updatedAt'])
+            && (
+              (
+                incoming().likesCount == existing().likesCount + 1
+                && existsAfter(/databases/$(database)/documents/hostedApps/$(slug)/likes/$(request.auth.uid))
+              )
+              || (
+                incoming().likesCount == existing().likesCount - 1
+                && !existsAfter(/databases/$(database)/documents/hostedApps/$(slug)/likes/$(request.auth.uid))
+              )
+            )
+          )
+        );
+
+      allow delete: if isSignedIn() && isValidId(slug) && (existing().ownerId == request.auth.uid || isAdmin());
+
+      match /likes/{userId} {
+        allow get: if isSignedIn() && isValidId(slug) && isValidId(userId) && userId == request.auth.uid;
+        allow list: if isSignedIn() && existing().userId == request.auth.uid;
+        allow create: if isSignedIn()
+          && isValidId(slug)
+          && isValidId(userId)
+          && userId == request.auth.uid
+          && exists(/databases/$(database)/documents/hostedApps/$(slug))
+          && isValidHostedAppLike(incoming());
+        allow delete: if isSignedIn()
+          && isValidId(slug)
+          && isValidId(userId)
+          && userId == request.auth.uid;
+      }
+    }
+
+    // 2. Daily Coding Challenge & Streak Leaderboard
+    match /leaderboard/{userId} {
+      allow get: if isValidId(userId);
+      allow list: if true;
+
+      allow create: if isSignedIn()
+        && isValidId(userId)
+        && userId == request.auth.uid
+        && isValidLeaderboardEntry(incoming())
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(userId)
+        && (userId == request.auth.uid || isAdmin())
+        && isValidLeaderboardEntry(incoming())
+        && incoming().userId == existing().userId
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'photoUrl', 'solvedCount', 'currentStreak', 'bestRuntimeMs', 'lastSolvedDate', 'updatedAt'
+        ])
+        && incoming().updatedAt == request.time;
+    }
+
+    // 3. Verifiable Lab Certificates
+    match /certificates/{certId} {
+      allow get: if isValidId(certId);
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn()
+        && isValidId(certId)
+        && isValidCertificate(incoming())
+        && incoming().certId == certId
+        && incoming().issuedAt == request.time;
+    }
+
+    // 4. Beta Pair Coding Room Metadata
+    match /collabRooms/{roomId} {
+      allow get: if isSignedIn() && isValidId(roomId);
+      allow list: if isSignedIn() && existing().hostUid == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && isValidId(roomId)
+        && isValidCollabRoom(incoming())
+        && incoming().roomId == roomId
+        && incoming().hostUid == request.auth.uid
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(roomId)
+        && existing().hostUid == request.auth.uid
+        && isValidCollabRoom(incoming())
+        && incoming().roomId == existing().roomId
+        && incoming().hostUid == existing().hostUid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['mode', 'activeFilePath', 'updatedAt'])
+        && incoming().updatedAt == request.time;
+
+      allow delete: if isSignedIn() && isValidId(roomId) && (existing().hostUid == request.auth.uid || isAdmin());
+    }
+
+    // 5. Beta Labs LeetCode Arena Progress
+    match /leetcodeProgress/{progressId} {
+      allow get: if isSignedIn() && isValidId(progressId) && (resource == null || existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn()
+        && isValidId(progressId)
+        && isValidLeetCodeProgress(incoming())
+        && progressId == request.auth.uid + '_' + incoming().titleSlug
+        && incoming().updatedAt == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(progressId)
+        && existing().userId == request.auth.uid
+        && isValidLeetCodeProgress(incoming())
+        && incoming().userId == existing().userId
+        && incoming().titleSlug == existing().titleSlug
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'language', 'status', 'code', 'notes', 'runtimeMs', 'updatedAt'
+        ])
+        && incoming().updatedAt == request.time;
+
+      allow delete: if isSignedIn() && isValidId(progressId) && (existing().userId == request.auth.uid || isAdmin());
+    }
+  }
+}

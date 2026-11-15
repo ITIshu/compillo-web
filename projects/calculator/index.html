@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyCalc — Python Precision Calculator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-[#0B0E17] text-slate-100 min-h-screen flex flex-col antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+
+  <!-- Top Navigation Bar (Clean 3-Zone Header) -->
+  <header class="border-b border-slate-800/90 bg-[#0F1420]">
+    <div class="max-w-5xl mx-auto px-5 h-14 flex items-center justify-between gap-8">
+      <div class="text-base font-semibold tracking-tight text-white whitespace-nowrap shrink-0">
+        PyCalc Studio
+      </div>
+
+      <div class="hidden sm:flex items-center gap-6 text-xs font-medium text-slate-400">
+        <span id="backend-status" class="font-mono whitespace-nowrap shrink-0 text-slate-400">
+          Checking Python API...
+        </span>
+        <span class="text-slate-700" aria-hidden="true">/</span>
+        <span id="server-port-label" class="font-mono tabular-nums whitespace-nowrap shrink-0 text-slate-400">
+          Localhost
+        </span>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          id="mode-toggle-btn"
+          onclick="toggleScientificMode()"
+          class="px-3.5 py-1.5 text-xs font-medium rounded-md border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition-colors whitespace-nowrap shrink-0"
+        >
+          Scientific Mode
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+      <!-- Left Column: Calculator Instrument (7 cols) -->
+      <section class="lg:col-span-7 bg-[#111827] border border-slate-800 rounded-xl p-5 space-y-4">
+        <!-- Instrument Readout Screen -->
+        <div class="bg-[#07090E] border border-slate-800/90 rounded-lg p-4 space-y-2">
+          <div class="flex items-center justify-between text-xs font-mono text-slate-400">
+            <div class="flex items-center gap-3">
+              <button
+                id="angle-mode-btn"
+                onclick="toggleAngleMode()"
+                class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-400 font-semibold transition-colors"
+                title="Switch between Degrees and Radians"
+              >
+                DEG
+              </button>
+              <span id="memory-indicator" class="text-amber-400 hidden tabular-nums">M: 0</span>
+            </div>
+            <span id="eval-engine-label" class="text-slate-500">Python AST Engine</span>
+          </div>
+
+          <!-- Expression Input -->
+          <div class="pt-1">
+            <input
+              id="expression-input"
+              type="text"
+              value=""
+              placeholder="0"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Mathematical expression"
+              class="w-full bg-transparent text-right font-mono tabular-nums text-lg sm:text-xl text-slate-300 placeholder-slate-600 outline-none"
+            />
+          </div>
+
+          <!-- Primary Computed Output -->
+          <div class="flex items-baseline justify-between gap-3 pt-1 border-t border-slate-800/60">
+            <span id="error-banner" class="text-xs font-mono text-rose-400 truncate"></span>
+            <div
+              id="result-display"
+              class="font-mono tabular-nums text-3xl sm:text-4xl font-bold text-white text-right tracking-tight ml-auto break-all"
+            >
+              0
+            </div>
+          </div>
+        </div>
+
+        <!-- Memory Controls Strip -->
+        <div class="grid grid-cols-4 gap-2">
+          <button onclick="memoryAction('MC')" class="calc-utility-btn">MC</button>
+          <button onclick="memoryAction('MR')" class="calc-utility-btn">MR</button>
+          <button onclick="memoryAction('M+')" class="calc-utility-btn">M+</button>
+          <button onclick="memoryAction('M-')" class="calc-utility-btn">M-</button>
+        </div>
+
+        <!-- Scientific Keys Drawer (Toggleable) -->
+        <div id="scientific-keys" class="hidden grid grid-cols-5 gap-2 pt-1">
+          <button onclick="appendToken('sin(')" class="calc-sci-btn">sin</button>
+          <button onclick="appendToken('cos(')" class="calc-sci-btn">cos</button>
+          <button onclick="appendToken('tan(')" class="calc-sci-btn">tan</button>
+          <button onclick="appendToken('log10(')" class="calc-sci-btn">log</button>
+          <button onclick="appendToken('log(')" class="calc-sci-btn">ln</button>
+
+          <button onclick="appendToken('sqrt(')" class="calc-sci-btn">√x</button>
+          <button onclick="appendToken('**2')" class="calc-sci-btn">x²</button>
+          <button onclick="appendToken('**')" class="calc-sci-btn">xʸ</button>
+          <button onclick="appendToken('factorial(')" class="calc-sci-btn">n!</button>
+          <button onclick="appendToken('abs(')" class="calc-sci-btn">|x|</button>
+
+          <button onclick="appendToken('pi')" class="calc-sci-btn">π</button>
+          <button onclick="appendToken('e')" class="calc-sci-btn">e</button>
+          <button onclick="appendToken('(')" class="calc-sci-btn">(</button>
+          <button onclick="appendToken(')')" class="calc-sci-btn">)</button>
+          <button onclick="appendToken('%')" class="calc-sci-btn">mod</button>
+        </div>
+
+        <!-- Standard Keypad Matrix -->
+        <div class="grid grid-cols-4 gap-2.5">
+          <button onclick="clearAll()" class="calc-action-btn text-rose-400">AC</button>
+          <button onclick="backspace()" class="calc-action-btn">DEL</button>
+          <button onclick="appendToken('(')" class="calc-action-btn">(</button>
+          <button onclick="appendToken('/')" class="calc-op-btn">÷</button>
+
+          <button onclick="appendToken('7')" class="calc-num-btn">7</button>
+          <button onclick="appendToken('8')" class="calc-num-btn">8</button>
+          <button onclick="appendToken('9')" class="calc-num-btn">9</button>
+          <button onclick="appendToken('*')" class="calc-op-btn">×</button>
+
+          <button onclick="appendToken('4')" class="calc-num-btn">4</button>
+          <button onclick="appendToken('5')" class="calc-num-btn">5</button>
+          <button onclick="appendToken('6')" class="calc-num-btn">6</button>
+          <button onclick="appendToken('-')" class="calc-op-btn">−</button>
+
+          <button onclick="appendToken('1')" class="calc-num-btn">1</button>
+          <button onclick="appendToken('2')" class="calc-num-btn">2</button>
+          <button onclick="appendToken('3')" class="calc-num-btn">3</button>
+          <button onclick="appendToken('+')" class="calc-op-btn">+</button>
+
+          <button onclick="appendToken('0')" class="calc-num-btn col-span-2">0</button>
+          <button onclick="appendToken('.')" class="calc-num-btn">.</button>
+          <button onclick="evaluateExpression()" class="calc-equals-btn">=</button>
+        </div>
+      </section>
+
+      <!-- Right Column: Python History Tape & API Inspector (5 cols) -->
+      <aside class="lg:col-span-5 bg-[#111827] border border-slate-800 rounded-xl p-5 flex flex-col gap-4 lg:h-[560px]">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Calculation Tape</h2>
+            <p class="text-xs text-slate-400">Stored in Python server memory</p>
+          </div>
+          <button
+            onclick="clearServerHistory()"
+            class="px-3 py-1 text-xs font-medium rounded-md border border-slate-700 hover:bg-slate-800 text-slate-300 transition-colors"
+          >
+            Clear Tape
+          </button>
+        </div>
+
+        <div id="history-list" class="flex-1 overflow-y-auto space-y-2 pr-1">
+          <div class="text-xs text-slate-500 py-8 text-center">
+            No calculations recorded yet. Enter an expression and press =.
+          </div>
+        </div>
+
+        <!-- Keyboard Shortcut Legend -->
+        <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 font-mono">
+          <span>Enter: Calculate</span>
+          <span>Esc: Clear</span>
+          <span>Backspace: Delete</span>
+        </div>
+      </aside>
+
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

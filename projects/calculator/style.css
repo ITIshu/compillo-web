@@ -1,0 +1,137 @@
+:root {
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.calc-num-btn,
+.calc-op-btn,
+.calc-action-btn,
+.calc-equals-btn,
+.calc-sci-btn,
+.calc-utility-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  cursor: pointer;
+  transition: background-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 90ms ease;
+}
+
+.calc-num-btn:active,
+.calc-op-btn:active,
+.calc-action-btn:active,
+.calc-equals-btn:active,
+.calc-sci-btn:active,
+.calc-utility-btn:active {
+  transform: scale(0.97);
+}
+
+.calc-num-btn {
+  height: 3.25rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f8fafc;
+  background-color: #1a2234;
+  border: 1px solid #263148;
+}
+
+.calc-num-btn:hover {
+  background-color: #243049;
+  border-color: #364666;
+}
+
+.calc-action-btn {
+  height: 3.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  background-color: #151c2c;
+  border: 1px solid #242f45;
+}
+
+.calc-action-btn:hover {
+  background-color: #1f2940;
+  color: #ffffff;
+}
+
+.calc-op-btn {
+  height: 3.25rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #22d3ee;
+  background-color: #132132;
+  border: 1px solid #1e3a56;
+}
+
+.calc-op-btn:hover {
+  background-color: #193048;
+  border-color: #06b6d4;
+}
+
+.calc-equals-btn {
+  height: 3.25rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #07090e;
+  background-color: #06b6d4;
+  border: 1px solid #22d3ee;
+}
+
+.calc-equals-btn:hover {
+  background-color: #22d3ee;
+}
+
+.calc-sci-btn {
+  height: 2.4rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #e2e8f0;
+  background-color: #131a29;
+  border: 1px solid #222d42;
+}
+
+.calc-sci-btn:hover {
+  background-color: #1d273d;
+  color: #38bdf8;
+  border-color: #2e4163;
+}
+
+.calc-utility-btn {
+  height: 2.2rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #94a3b8;
+  background-color: #0f1523;
+  border: 1px solid #1e293b;
+}
+
+.calc-utility-btn:hover {
+  background-color: #182236;
+  color: #f1f5f9;
+}
+
+#history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#history-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#history-list::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}

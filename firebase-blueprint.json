@@ -1,0 +1,275 @@
+{
+  "entities": {
+    "HostedApp": {
+      "title": "HostedApp",
+      "description": "A hosted web or Python application deployed via Compillo Website.",
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "pattern": "^[a-z0-9][a-z0-9\\-]{0,48}[a-z0-9]?$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "ownerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Web Apps", "Python Backends", "Calculators & Tools", "Student Labs"]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["calculator", "custom-static", "custom-python"]
+        },
+        "entryFile": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "files": {
+          "type": "array",
+          "description": "Up to 50 source files stored as path/content maps."
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "likesCount": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["slug", "ownerId", "ownerName", "title", "category", "mode", "files", "isPublic", "likesCount", "createdAt", "updatedAt"]
+    },
+    "HostedAppLike": {
+      "title": "HostedAppLike",
+      "description": "Upvote marker for a public community gallery app.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Daily coding challenge score and streak ranking for a learner.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "solvedCount": {
+          "type": "integer"
+        },
+        "currentStreak": {
+          "type": "integer"
+        },
+        "bestRuntimeMs": {
+          "type": "number"
+        },
+        "lastSolvedDate": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "displayName", "solvedCount", "currentStreak", "bestRuntimeMs", "lastSolvedDate", "updatedAt"]
+    },
+    "LabCertificate": {
+      "title": "LabCertificate",
+      "description": "Verifiable completion credential generated on the Compillo Certificate page.",
+      "type": "object",
+      "properties": {
+        "certId": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 64
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "recipientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "courseTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "score": {
+          "type": "integer"
+        },
+        "issuedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["certId", "userId", "recipientName", "courseTitle", "score", "issuedAt"]
+    },
+    "CollabRoomSnapshot": {
+      "title": "CollabRoomSnapshot",
+      "description": "Metadata for a beta pair coding room hosted on the Compillo website.",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64
+        },
+        "hostUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "hostName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["edit", "readonly"]
+        },
+        "activeFilePath": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["roomId", "hostUid", "hostName", "mode", "activeFilePath", "updatedAt"]
+    },
+    "LeetCodeProgress": {
+      "title": "LeetCodeProgress",
+      "description": "User progress, saved solution code, and notes for a LeetCode Arena problem.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "titleSlug": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[a-z0-9\\-]+$"
+        },
+        "frontendId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["Easy", "Medium", "Hard"]
+        },
+        "language": {
+          "type": "string",
+          "enum": ["python3", "javascript", "cpp"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["attempted", "solved"]
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 60000
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "runtimeMs": {
+          "type": "number"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "titleSlug", "frontendId", "title", "difficulty", "language", "status", "code", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/hostedApps/{slug}": {
+      "schema": { "$ref": "#/entities/HostedApp" },
+      "description": "Deployed hosted applications with files, visibility toggle, and upvote count."
+    },
+    "/hostedApps/{slug}/likes/{userId}": {
+      "schema": { "$ref": "#/entities/HostedAppLike" },
+      "description": "Per-user upvotes on public community gallery apps."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Daily coding challenge leaderboard and streak metrics."
+    },
+    "/certificates/{certId}": {
+      "schema": { "$ref": "#/entities/LabCertificate" },
+      "description": "Verified lab certificates issued and downloadable by learners."
+    },
+    "/collabRooms/{roomId}": {
+      "schema": { "$ref": "#/entities/CollabRoomSnapshot" },
+      "description": "Beta pair coding room permission and host metadata."
+    },
+    "/leetcodeProgress/{progressId}": {
+      "schema": { "$ref": "#/entities/LeetCodeProgress" },
+      "description": "Per-user solved status and saved solutions for Beta Labs LeetCode Arena."
+    }
+  }
+}

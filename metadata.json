@@ -1,0 +1,8 @@
+{
+  "name": "Remix Compillo 2.0",
+  "description": "A feature-rich web editor featuring syntax highlighting, multi-tab support, customizable  themes, file explorer, integrated terminal output, and a robust plugin system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
