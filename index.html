@@ -1,6 +1,46 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      // Intercept and stub WebSocket for Vite HMR in container preview environment to prevent connection errors
+      (function() {
+        if (typeof window === 'undefined') return;
+        const OrigWS = window.WebSocket;
+        if (!OrigWS) return;
+        window.WebSocket = function(url, protocols) {
+          if (typeof url === 'string' && (url.includes('vite') || url.includes('hmr') || url.includes('sockjs') || url.includes('ws'))) {
+            const listeners = {};
+            return {
+              send: function() {},
+              close: function() {},
+              addEventListener: function(evt, fn) { listeners[evt] = listeners[evt] || []; listeners[evt].push(fn); },
+              removeEventListener: function(evt, fn) {
+                if (listeners[evt]) {
+                  listeners[evt] = listeners[evt].filter(f => f !== fn);
+                }
+              },
+              readyState: 3, // CLOSED
+              CONNECTING: 0,
+              OPEN: 1,
+              CLOSING: 2,
+              CLOSED: 3,
+              dispatchEvent: function(event) {
+                if (listeners[event.type]) {
+                  listeners[event.type].forEach(fn => fn(event));
+                }
+                return true;
+              }
+            };
+          }
+          return new OrigWS(url, protocols);
+        };
+        window.WebSocket.prototype = OrigWS.prototype;
+        window.WebSocket.CONNECTING = OrigWS.CONNECTING;
+        window.WebSocket.OPEN = OrigWS.OPEN;
+        window.WebSocket.CLOSING = OrigWS.CLOSING;
+        window.WebSocket.CLOSED = OrigWS.CLOSED;
+      })();
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
