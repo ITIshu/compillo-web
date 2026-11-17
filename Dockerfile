@@ -17,8 +17,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 python3-pip build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY package.json bun.lock ./
-RUN bun install --production
+COPY package.json ./
+COPY --from=builder /app/bun.lock ./bun.lock
+RUN bun install --production --frozen-lockfile
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
