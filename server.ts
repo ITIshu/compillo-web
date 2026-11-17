@@ -5,7 +5,6 @@ import os from 'os';
 import http from 'http';
 import net from 'net';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import { createServer as createViteServer } from 'vite';
 import {
   getAvailableCompilers,
   handleLanguageExecution,
@@ -2609,6 +2608,7 @@ except Exception:
 
   // Vite middleware in dev or static files in production
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',
