@@ -1,7 +1,9 @@
 import { Sandbox } from 'e2b';
+import { randomUUID } from 'crypto';
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const sessions = new Map<string, { sandbox: any; cwd: string; touchedAt: number }>();
+const projectSandboxes = new Map<string, { sandbox: any; touchedAt: number }>();
 
 export function isE2BConfigured() {
   return Boolean(process.env.E2B_API_KEY);
@@ -9,7 +11,24 @@ export function isE2BConfigured() {
 
 export async function createIsolatedSandbox() {
   if (!isE2BConfigured()) throw new Error('E2B_API_KEY is not configured on this service.');
+  if (sessions.size + projectSandboxes.size >= 25) {
+    throw new Error('Too many active isolated runner sandboxes. Try again after an existing sandbox expires.');
+  }
   return Sandbox.create({ timeoutMs: DEFAULT_TIMEOUT_MS });
+}
+
+export async function createIsolatedProjectSandbox() {
+  const sandbox = await createIsolatedSandbox();
+  const id = randomUUID();
+  projectSandboxes.set(id, { sandbox, touchedAt: Date.now() });
+  return sandbox;
+}
+
+export async function killIsolatedSandbox(sandbox: any) {
+  for (const [id, entry] of projectSandboxes) {
+    if (entry.sandbox === sandbox) projectSandboxes.delete(id);
+  }
+  await sandbox.kill().catch(() => undefined);
 }
 
 export async function getOrCreateIsolatedSession(id: string) {
@@ -51,6 +70,12 @@ export function pruneIsolatedSessions() {
   const cutoff = Date.now() - 30 * 60 * 1000;
   for (const [id, session] of sessions) {
     if (session.touchedAt < cutoff) removeIsolatedSession(id);
+  }
+  for (const [id, entry] of projectSandboxes) {
+    if (entry.touchedAt < cutoff) {
+      projectSandboxes.delete(id);
+      void entry.sandbox.kill().catch(() => undefined);
+    }
   }
 }
 

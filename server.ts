@@ -6,7 +6,7 @@ import http from 'http';
 import net from 'net';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { createHash } from 'crypto';
-import { getOrCreateIsolatedSession, runSandboxCommand, writeSandboxFile } from './server/e2bRunner';
+import { createIsolatedProjectSandbox, getOrCreateIsolatedSession, killIsolatedSandbox, runSandboxCommand, writeSandboxFile } from './server/e2bRunner';
 import {
   getAvailableCompilers,
   handleLanguageExecution,
@@ -977,8 +977,9 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
     }
 
     if (process.env.E2B_API_KEY) {
+      let isolatedSandbox: any = null;
       try {
-        const sandbox = await (await import('./server/e2bRunner')).createIsolatedSandbox();
+        const sandbox = isolatedSandbox = await createIsolatedProjectSandbox();
         const projectFiles: Array<{ path: string; content: string }> = [];
         const addLocalFiles = (dir: string, prefix = '') => {
           for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -1000,7 +1001,7 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
           }
         } else if (targetDir && fs.existsSync(targetDir)) addLocalFiles(targetDir);
         if (!projectFiles.length) {
-          await sandbox.kill();
+          await killIsolatedSandbox(sandbox);
           res.status(400).json({ error: 'No project files were provided to launch.' });
           return;
         }
@@ -1024,12 +1025,14 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
         const ready = await runSandboxCommand(sandbox, `curl -fsS http://127.0.0.1:${targetPort}/ >/dev/null`, { timeoutMs: 3000 }).then(() => true).catch(() => false);
         if (!ready) {
           const logs = await runSandboxCommand(sandbox, 'tail -n 40 /tmp/compillo-server.log 2>/dev/null', { timeoutMs: 3000 }).catch(() => ({ stdout: '' }));
+          await killIsolatedSandbox(sandbox);
           res.status(502).json({ error: `Project did not start on port ${targetPort}. ${String(logs.stdout || launch.stderr || '').slice(0, 2000)}` });
           return;
         }
         res.json({ ok: true, port: targetPort, label: label || 'Workspace Server', proxyUrl: `https://${host}/`, isolated: true });
         return;
       } catch (err: any) {
+        if (isolatedSandbox) await killIsolatedSandbox(isolatedSandbox);
         console.error('E2B project launch failed:', err?.message || err);
         res.status(502).json({ error: err?.message || 'Failed to start project in isolated runner' });
         return;
