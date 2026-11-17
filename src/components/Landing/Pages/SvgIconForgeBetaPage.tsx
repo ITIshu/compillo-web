@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { WebsiteThemeTokens } from './WebsitePageTheme';
-import { Copy, Check, Search, ExternalLink, ShoppingCart, ShoppingBag, CreditCard, Tag, Search as SearchIcon, User, Settings, Bell, Star, Heart, CheckCircle, Plus, Trash2, ArrowRight, Share2, Download, Shield } from 'lucide-react';
+import { Copy, Check, Search, ExternalLink, ShoppingCart, ShoppingBag, CreditCard, Tag, User, Settings, Bell, Star, Heart } from 'lucide-react';
 
 interface SvgIconForgeBetaPageProps {
   tokens: WebsiteThemeTokens;
@@ -32,11 +32,14 @@ export const SvgIconForgeBetaPage: React.FC<SvgIconForgeBetaPageProps> = ({ toke
   const filteredIcons = MULTI_PLATFORM_ICONS.filter(i => i.name.toLowerCase().includes(search.toLowerCase()) || i.category.toLowerCase().includes(search.toLowerCase()) || i.source.toLowerCase().includes(search.toLowerCase()));
 
   const getCustomizedSvg = () => {
+    if (!selectedIcon || !selectedIcon.svg) return '';
     return selectedIcon.svg.replace(/fill="currentColor"/g, `fill="${iconColor}"`).replace(/stroke="currentColor"/g, `stroke="${iconColor}"`);
   };
 
   const handleCopySvg = () => {
-    navigator.clipboard.writeText(getCustomizedSvg());
+    const raw = getCustomizedSvg();
+    if (!raw) return;
+    navigator.clipboard.writeText(raw);
     setCopiedSvg(true);
     setTimeout(() => setCopiedSvg(false), 2000);
   };

@@ -420,7 +420,10 @@ export async function handleLeetCodeRun(req: Request, res: Response) {
     res.status(400).json({ ok: false, error: 'Code exceeds 100KB limit.' });
     return;
   }
-  const lang = String(language || 'python3').toLowerCase();
+  let lang = String(language || 'python3').toLowerCase().trim();
+  if (lang === 'python' || lang === 'py') lang = 'python3';
+  if (lang === 'js' || lang === 'ts' || lang === 'typescript' || lang === 'node') lang = 'javascript';
+  if (lang === 'c++' || lang === 'c') lang = 'cpp';
   if (!['python3', 'javascript', 'cpp'].includes(lang)) {
     res.status(400).json({ ok: false, error: 'Supported languages: python3, javascript, cpp.' });
     return;

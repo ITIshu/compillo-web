@@ -44,7 +44,7 @@ interface ExplorerViewProps {
   onCloseWorkspace?: () => void;
   onOpenWorkspace?: () => void;
   onRequestNewFile?: (folderId?: string | null) => void;
-  onLoadSampleProject?: (projectType: 'calculator') => void;
+  onLoadSampleProject?: (projectType: 'calculator' | 'craveo') => void;
   recentFiles?: RecentFileItem[];
   onRemoveRecentFile?: (id: string) => void;
   onClearRecentFiles?: () => void;
@@ -58,6 +58,7 @@ interface ExplorerViewProps {
   onRefresh: () => void;
   onExport: () => void;
   onImport: (file: File) => void;
+  onImportProject?: () => void;
   revisionVersion?: number;
   onCreateCheckpoint?: (file: FileNode) => void;
   onCompareRevision?: (file: FileNode, oldContent: string, newContent: string, title?: string) => void;
@@ -88,6 +89,7 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
   onRefresh,
   onExport,
   onImport,
+  onImportProject,
   revisionVersion = 0,
   onCreateCheckpoint,
   onCompareRevision,
@@ -749,17 +751,32 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
             >
               <RefreshCw size={13} />
             </button>
-            <label
-              title="Import File"
-              className={`p-1 rounded transition-colors cursor-pointer ${
-                currentTheme.type === 'light'
-                  ? 'hover:bg-black/8 text-gray-700 hover:text-black'
-                  : 'hover:bg-white/15 text-[#cccccc] hover:text-white'
-              }`}
-            >
-              <Upload size={13} />
-              <input type="file" className="hidden" onChange={handleFileInputChange} />
-            </label>
+            {onImportProject ? (
+              <button
+                type="button"
+                onClick={onImportProject}
+                title="Import Project (Folder / ZIP / Files)"
+                className={`p-1 rounded transition-colors ${
+                  currentTheme.type === 'light'
+                    ? 'hover:bg-black/8 text-gray-700 hover:text-black'
+                    : 'hover:bg-white/15 text-[#cccccc] hover:text-white'
+                }`}
+              >
+                <Upload size={13} />
+              </button>
+            ) : (
+              <label
+                title="Import File"
+                className={`p-1 rounded transition-colors cursor-pointer ${
+                  currentTheme.type === 'light'
+                    ? 'hover:bg-black/8 text-gray-700 hover:text-black'
+                    : 'hover:bg-white/15 text-[#cccccc] hover:text-white'
+                }`}
+              >
+                <Upload size={13} />
+                <input type="file" className="hidden" onChange={handleFileInputChange} />
+              </label>
+            )}
             <button
               onClick={onExport}
               title="Export Project"
@@ -800,6 +817,16 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   <span className="font-semibold truncate">PyCalc Python Calculator</span>
                 </div>
                 <ChevronRight size={12} className="opacity-60 group-hover:opacity-100 shrink-0 text-cyan-400" />
+              </button>
+              <button
+                onClick={() => onLoadSampleProject?.('craveo')}
+                className="w-full flex items-center justify-between px-2 py-1 rounded bg-orange-950/30 hover:bg-orange-900/40 border border-orange-500/40 text-orange-300 hover:text-white transition-all text-[10.5px] group cursor-pointer"
+                title="Load Craveo Food Delivery (Python + SQLite Full-Stack)"
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <span className="font-semibold truncate">Craveo Food Delivery</span>
+                </div>
+                <ChevronRight size={12} className="opacity-60 group-hover:opacity-100 shrink-0 text-orange-400" />
               </button>
             </div>
 
@@ -846,12 +873,29 @@ export const ExplorerView: React.FC<ExplorerViewProps> = ({
                   </p>
                 </div>
                 <div className="flex flex-col w-full gap-2">
+                  {onImportProject && (
+                    <button
+                      type="button"
+                      onClick={onImportProject}
+                      className="w-full px-3.5 py-2 text-[11.5px] font-medium rounded-md text-white transition-all shadow-sm flex items-center justify-center gap-1.5 bg-[#007acc] hover:bg-[#0069b3] active:scale-95"
+                    >
+                      <Upload size={12} />
+                      <span>Import Folder / ZIP</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => onLoadSampleProject?.('calculator')}
                     className="w-full px-3.5 py-2 text-[11.5px] font-medium rounded-md text-white transition-all shadow-sm flex items-center justify-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 active:scale-95"
                   >
                     <span>Load PyCalc Calculator</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onLoadSampleProject?.('craveo')}
+                    className="w-full px-3.5 py-2 text-[11.5px] font-medium rounded-md text-white transition-all shadow-sm flex items-center justify-center gap-1.5 bg-orange-600 hover:bg-orange-500 active:scale-95"
+                  >
+                    <span>Load Craveo Food Delivery</span>
                   </button>
                   <button
                     type="button"

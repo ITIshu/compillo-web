@@ -1594,6 +1594,19 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   </div>
                   <span className="text-[10px] font-mono opacity-75">:5050</span>
                 </button>
+                <button
+                  onClick={() => {
+                    onSwitchProject('craveo');
+                    setIsProjectMenuOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-[#007acc] hover:text-white flex items-center justify-between transition-colors"
+                >
+                  <div>
+                    <div className="font-medium">Craveo Food Delivery</div>
+                    <div className="text-[10px] opacity-65">Python + SQLite Full-Stack</div>
+                  </div>
+                  <span className="text-[10px] font-mono opacity-75">:5000</span>
+                </button>
               </div>
             )}
           </div>

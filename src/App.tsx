@@ -24,6 +24,7 @@ import {
   convertFlatFilesToTree,
 } from './services/fileSystem';
 import { getCalculatorProject } from './services/calculatorProject';
+import { getCraveoProject } from './services/craveoProject';
 import { THEMES, VSCodeThemeDefinition } from './services/themes';
 import { pluginManager } from './services/pluginSystem';
 import { editorService } from './services/editorService';
@@ -81,6 +82,7 @@ import { engagementService } from './services/engagementService';
 import { recordRevision } from './services/revisionService';
 import type { SearchReplaceOptions } from './components/SideBar/SearchView';
 import { CompilloLandingPage } from './components/Landing/CompilloLandingPage';
+import { StudioLoader } from './components/Common/StudioLoader';
 import { ArrowLeftRight, X as CloseIcon } from 'lucide-react';
 
 const DEFAULT_SETTINGS: EditorSettings = {
@@ -186,9 +188,37 @@ export default function App() {
     }
     return true;
   });
+  const [editorEntranceActive, setEditorEntranceActive] = useState<boolean>(false);
+  // Only show the Studio opening animation when entering Compillo Studio directly
+  // (never when opening Compillo Landing Page). When launching from Landing Page,
+  // CompilloLandingPage plays StudioLoader right before calling onOpenEditor.
+  const [isStudioLoading, setIsStudioLoading] = useState<boolean>(() => !showLandingPage);
+  const [studioJustRevealed, setStudioJustRevealed] = useState<boolean>(false);
 
-  const [isBootingEditor, setIsBootingEditor] = useState(false);
-  const [bootText, setBootText] = useState('Initializing Compillo V8 Sandbox...');
+  const handleStudioLoadComplete = useCallback(() => {
+    setIsStudioLoading(false);
+    setStudioJustRevealed(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isStudioLoading) {
+      const revealTimer = window.setTimeout(() => setStudioJustRevealed(false), 500);
+      return () => window.clearTimeout(revealTimer);
+    }
+    const safetyTimer = window.setTimeout(() => {
+      setIsStudioLoading(false);
+    }, 1800);
+    return () => window.clearTimeout(safetyTimer);
+  }, [isStudioLoading]);
+
+  useEffect(() => {
+    if (!showLandingPage) {
+      setEditorEntranceActive(true);
+      const timer = window.setTimeout(() => setEditorEntranceActive(false), 720);
+      return () => window.clearTimeout(timer);
+    }
+    setEditorEntranceActive(false);
+  }, [showLandingPage]);
 
   // Mobile responsiveness
   const [isMobile, setIsMobile] = useState(
@@ -411,15 +441,25 @@ export default function App() {
       setIsPanelOpen(true);
       setActivePanelView('output');
     };
+    const handleOpenLivePreviewEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{ url?: string }>;
+      if (customEvent.detail?.url) {
+        setLivePreviewUrl(customEvent.detail.url);
+      }
+      setIsLivePreviewOpen(true);
+      setPreviewRefreshToken((v) => v + 1);
+    };
     window.addEventListener('compillo:open-master-panel', handleOpenMaster);
     window.addEventListener('compillo:open-edu-labs', handleOpenEdu);
     window.addEventListener('compillo:open-customizer', handleOpenCustomizer);
     window.addEventListener('compillo:open-output-tasks', handleOpenOutputTasks);
+    window.addEventListener('compillo:open-live-preview', handleOpenLivePreviewEvent);
     return () => {
       window.removeEventListener('compillo:open-master-panel', handleOpenMaster);
       window.removeEventListener('compillo:open-edu-labs', handleOpenEdu);
       window.removeEventListener('compillo:open-customizer', handleOpenCustomizer);
       window.removeEventListener('compillo:open-output-tasks', handleOpenOutputTasks);
+      window.removeEventListener('compillo:open-live-preview', handleOpenLivePreviewEvent);
     };
   }, []);
 
@@ -826,9 +866,12 @@ export default function App() {
     }
 
     const hasCalc = all.some((f) => (f.content || '').includes('PyCalc') || f.id.startsWith('calc-'));
+    const hasCraveo = all.some(
+      (f) => f.id.startsWith('craveo-') || (f.name === 'seed_data.py' && (f.content || '').includes('seed_all'))
+    );
 
-    const projectKey = hasCalc ? 'calculator' : 'workspace';
-    const targetPort = hasCalc ? 5050 : 5100;
+    const projectKey = hasCalc ? 'calculator' : hasCraveo ? 'craveo' : 'workspace';
+    const targetPort = hasCalc ? 5050 : hasCraveo ? 5000 : 5100;
 
     setIsLaunchingApp(true);
     try {
@@ -1105,22 +1148,27 @@ export default function App() {
     }
   };
 
-  const handleLoadStarterProject = (_templateType?: string) => {
-    const starterNodes = getCalculatorProject();
+  const handleLoadStarterProject = (templateType?: string) => {
+    const isCraveo = templateType === 'craveo';
+    const starterNodes = isCraveo ? getCraveoProject() : getCalculatorProject();
 
     setFiles(starterNodes);
     saveFileSystem(starterNodes);
     setIsWorkspaceOpen(true);
     setTabs([]);
     const all = getAllFiles(starterNodes);
-    const target =
-      all.find((f) => f.name === 'index.html') ||
-      all.find((f) => f.name === 'server.py') ||
-      all[0];
+    const target = isCraveo
+      ? all.find((f) => f.name === 'README.md') || all.find((f) => f.name === 'app.py') || all[0]
+      : all.find((f) => f.name === 'index.html') || all.find((f) => f.name === 'server.py') || all[0];
     if (target) {
       handleOpenFile(target.id, starterNodes);
     }
-    showNotification('Loaded PyCalc Python Calculator Project into Workspace!', 'info');
+    showNotification(
+      isCraveo
+        ? 'Loaded Craveo Food Delivery Project into Workspace!'
+        : 'Loaded PyCalc Python Calculator Project into Workspace!',
+      'info'
+    );
   };
 
   const handleResetToStarter = () => {
@@ -1229,10 +1277,70 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const handleImportFiles = (fileList: FileList | File[]) => {
-    const arr = Array.from(fileList);
-    if (arr.length === 0) return;
+  const handleImportFiles = async (fileList: FileList | File[]) => {
+    const arr = Array.from(fileList).filter((f) => f.size <= 1_500_000);
+    if (arr.length === 0) {
+      showNotification('No valid files under 1.5 MB selected.', 'warning');
+      return;
+    }
     setIsWorkspaceOpen(true);
+
+    const relPaths = arr.map((f) => ((f as any).webkitRelativePath || f.name).replace(/\\/g, '/'));
+    const hasNested = relPaths.some((p) => p.includes('/'));
+
+    if (hasNested) {
+      const topSegments = new Set(relPaths.map((p) => p.split('/')[0]).filter(Boolean));
+      const stripTop = topSegments.size === 1;
+
+      const flatEntries = await Promise.all(
+        arr.map(
+          (file, idx) =>
+            new Promise<{ path: string; name: string; content: string; language: string } | null>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                const rawPath = relPaths[idx];
+                const cleanRel = stripTop ? rawPath.split('/').slice(1).join('/') : rawPath;
+                if (!cleanRel) {
+                  resolve(null);
+                  return;
+                }
+                const name = cleanRel.split('/').pop() || file.name;
+                resolve({
+                  path: '/' + cleanRel.replace(/^\/+/, ''),
+                  name,
+                  content: (e.target?.result as string) || '',
+                  language: detectLanguage(name),
+                });
+              };
+              reader.onerror = () => resolve(null);
+              reader.readAsText(file);
+            })
+        )
+      );
+
+      const valid = flatEntries.filter(
+        (x): x is { path: string; name: string; content: string; language: string } => x !== null
+      );
+      if (valid.length === 0) return;
+
+      const tree = convertFlatFilesToTree(valid);
+      setFiles(tree);
+      saveFileSystem(tree);
+      setTabs([]);
+      const all = getAllFiles(tree);
+      const entryFile =
+        all.find((f) => f.name.toLowerCase() === 'readme.md') ||
+        all.find((f) => f.name === 'app.py' || f.name === 'server.py' || f.name === 'index.html') ||
+        all[0];
+      if (entryFile) {
+        handleOpenFile(entryFile.id, tree);
+      }
+      showNotification(
+        `Imported folder with ${valid.length} file(s)! Open Terminal and run "serve 8000" or "python3 app.py &" to get a port.`,
+        'info'
+      );
+      return;
+    }
 
     let count = 0;
     arr.forEach((file) => {
@@ -1734,64 +1842,41 @@ export default function App() {
       })),
   ];
 
-  if (isBootingEditor) {
-    return (
-      <div className="fixed inset-0 z-50 bg-zinc-950 flex flex-col items-center justify-center text-white select-none animate-fadeIn">
-        <div className="relative flex items-center justify-center mb-6">
-          <div className="absolute w-28 h-28 rounded-full border-2 border-indigo-500/30 animate-ping" />
-          <div className="absolute w-20 h-20 rounded-full border-2 border-cyan-500/50 animate-spin" />
-          <img src="/compillo-logo.png" alt="Compillo" className="h-10 w-auto relative z-10 drop-shadow-[0_0_15px_rgba(99,102,241,0.6)]" />
-        </div>
-        <h2 className="text-xl font-bold tracking-wider bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent mb-2">
-          COMPILLO STUDIO
-        </h2>
-        <p className="text-xs font-mono text-zinc-400 animate-pulse">{bootText}</p>
-        <div className="w-48 h-1 bg-zinc-800 rounded-full mt-6 overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400" style={{ width: '85%' }} />
-        </div>
-      </div>
-    );
-  }
-
   if (showLandingPage) {
     return (
       <CompilloLandingPage
         currentTheme={currentTheme}
         onSelectTheme={(themeId) => setSettings((s) => ({ ...s, theme: themeId }))}
         onOpenEditor={(options) => {
-          setIsBootingEditor(true);
-          setBootText('Mounting Virtual File System & LSP...');
-          window.setTimeout(() => {
-            setBootText('Compiling WebAssembly Engine...');
-          }, 320);
-          window.setTimeout(() => {
-            setShowLandingPage(false);
-            setIsBootingEditor(false);
-            if (options?.sideBarView !== undefined) {
-              setActiveSideBarView(options.sideBarView);
-            }
-            if (options?.panelTab) {
-              setIsPanelOpen(true);
-              setActivePanelView(options.panelTab);
-            }
-            if (options?.starterTemplate) {
-              const { filename, content } = options.starterTemplate;
-              window.setTimeout(() => {
+          setShowLandingPage(false);
+          if (options?.sideBarView !== undefined) {
+            setActiveSideBarView(options.sideBarView);
+          }
+          if (options?.panelTab) {
+            setIsPanelOpen(true);
+            setActivePanelView(options.panelTab);
+          }
+          if (options?.starterTemplate) {
+            const { filename, content } = options.starterTemplate;
+            window.setTimeout(() => {
+              try {
                 handleCreateFile(null, filename, content);
-              }, 60);
-            }
-            if (options?.openEduLabs) {
-              window.setTimeout(() => setEduLabModalOpen(true), 120);
-            }
-            if (options?.openSignIn) {
-              window.setTimeout(() => setSignInModalOpen(true), 120);
-            }
-            if (options?.startPyCalcDemo) {
-              window.setTimeout(() => {
+              } catch {}
+            }, 60);
+          }
+          if (options?.openEduLabs) {
+            window.setTimeout(() => setEduLabModalOpen(true), 120);
+          }
+          if (options?.openSignIn) {
+            window.setTimeout(() => setSignInModalOpen(true), 120);
+          }
+          if (options?.startPyCalcDemo) {
+            window.setTimeout(() => {
+              try {
                 handleLaunchWorkspaceApp(false);
-              }, 150);
-            }
-          }, 700);
+              } catch {}
+            }, 150);
+          }
         }}
       />
     );
@@ -1800,14 +1885,28 @@ export default function App() {
   return (
     <div
       id="compillo-app-root"
-      className="flex flex-col h-screen w-screen select-none overflow-hidden font-sans"
+      className={`flex flex-col h-screen w-screen select-none overflow-hidden font-sans relative ${
+        studioJustRevealed ? 'compillo-studio-reveal' : ''
+      }`}
       style={{
         backgroundColor: currentTheme.ui.editorBg,
         color: currentTheme.ui.editorFg,
       }}
     >
+      {isStudioLoading && (
+        <StudioLoader theme={currentTheme} onComplete={handleStudioLoadComplete} />
+      )}
+      {editorEntranceActive && (
+        <div
+          className="pointer-events-none absolute top-0 inset-x-0 h-[2px] z-50 compillo-wb-top-sweep"
+          style={{ backgroundColor: currentTheme.ui.accent }}
+          aria-hidden="true"
+        />
+      )}
+
       {/* 1. Title Bar */}
-      <TitleBar
+      <div className={editorEntranceActive ? 'compillo-wb-title shrink-0' : 'shrink-0'}>
+        <TitleBar
         currentTheme={currentTheme}
         onSelectTheme={(themeId) => setSettings((s) => ({ ...s, theme: themeId }))}
         activeFileName={activeFile?.name}
@@ -1891,11 +1990,13 @@ export default function App() {
           setAboutModalOpen(true);
         }}
       />
+      </div>
 
       {/* 2. Main Workbench Area: Activity Bar + Side Bar + Editor (+ Bottom Panel) */}
       <div className="flex-1 flex min-h-0 relative overflow-hidden">
-        {/* Activity Bar (Vertical icons on left) */}
-        <ActivityBar
+        <div className={`flex min-h-0 shrink-0 ${editorEntranceActive ? 'compillo-wb-rail' : ''}`}>
+          {/* Activity Bar (Vertical icons on left) */}
+          <ActivityBar
           currentTheme={currentTheme}
           activeView={activeSideBarView}
           onSelectView={(view) =>
@@ -1948,6 +2049,7 @@ export default function App() {
           onRefresh={() => setFiles(loadFileSystem())}
           onExport={handleExportProjectZip}
           onImport={handleImportFile}
+          onImportProject={() => setImportModalOpen(true)}
           onCommit={handleCommitGit}
           onRevertFile={handleRevertFile}
           onOpenDiff={(fileId) => setDiffViewFileId(fileId)}
@@ -1976,9 +2078,14 @@ export default function App() {
           onCompareRevision={handleCompareRevision}
           onRestoreRevision={handleRestoreRevision}
         />
+        </div>
 
         {/* Editor Area (+ Bottom Panel) */}
-        <div className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden">
+        <div
+          className={`flex-1 flex flex-col min-w-0 h-full relative overflow-hidden ${
+            editorEntranceActive ? 'compillo-wb-editor' : ''
+          }`}
+        >
           {/* Top Multi-Tab Bar */}
           <TabBar
             currentTheme={currentTheme}
@@ -2258,7 +2365,8 @@ export default function App() {
       </div>
 
       {/* 3. Bottom Status Bar */}
-      <StatusBar
+      <div className={editorEntranceActive ? 'compillo-wb-panel shrink-0' : 'shrink-0'}>
+        <StatusBar
         currentTheme={currentTheme}
         cursorLine={cursorPos.line}
         cursorCol={cursorPos.col}
@@ -2293,6 +2401,7 @@ export default function App() {
           setActivePanelView('output');
         }}
       />
+      </div>
 
       {/* 4. Mobile Bottom Navigation Bar (Phone & Tablet) */}
       {isMobile && (

@@ -42,7 +42,7 @@ interface AgentWorkspaceViewProps {
   onApplyAllPatches?: (patches: Array<{ path: string; newContent: string }>) => void;
   onOpenDiffWithCustomContent?: (file: FileNode, oldContent: string, newContent: string) => void;
   onCreateTestFile?: (name: string, content: string) => void;
-  onLoadSampleProject?: (projectType: 'calculator') => void;
+  onLoadSampleProject?: (projectType: 'calculator' | 'craveo') => void;
   initialPrompt?: string;
   initialWorkflow?: AgentWorkflowType;
   autoRunTrigger?: number;

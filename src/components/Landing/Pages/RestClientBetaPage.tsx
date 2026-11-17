@@ -69,7 +69,10 @@ export const RestClientBetaPage: React.FC<RestClientBetaPageProps> = ({ tokens }
           timestamp: new Date().toISOString(),
           data: {
             message: "Request executed successfully through Compillo REST Client Gateway",
-            echoedBody: method !== 'GET' ? JSON.parse(requestBody || '{}') : null,
+            echoedBody: method !== 'GET' ? (() => {
+              try { return JSON.parse(requestBody || '{}'); }
+              catch { return requestBody; }
+            })() : null,
             headersReceivedCount: headers.length
           }
         }, null, 2)

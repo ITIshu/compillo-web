@@ -15,7 +15,6 @@ import {
   Cpu,
   ExternalLink,
   Flame,
-  FolderTree,
   GitBranch,
   Globe,
   GraduationCap,
@@ -45,6 +44,7 @@ import {
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { ActivePanelView, ActiveSideBarView } from '../../types';
 import { CompilloThemeDefinition, THEMES } from '../../services/themes';
+import { StudioLoader } from '../Common/StudioLoader';
 import { auth as firebaseAuth, googleSignIn, googleSignOut } from '../../services/googleAuth';
 import {
   CompilloWebsitePage,
@@ -534,13 +534,6 @@ const PRODUCT_FAQS = [
   },
 ];
 
-const BOOT_FILES = [
-  'projects/calculator/server.py',
-  'projects/calculator/index.html',
-  'projects/calculator/style.css',
-  'projects/calculator/app.js',
-];
-
 function hexToRgba(hex: string, alpha: number): string {
   const clean = hex.replace('#', '');
   if (clean.length !== 6) return `rgba(56, 189, 248, ${alpha})`;
@@ -852,22 +845,14 @@ export const CompilloLandingPage: React.FC<CompilloLandingPageProps> = ({
     window.setTimeout(() => setClaimedCert(false), 3500);
   };
 
-  // Running Animation Overlay before opening Compillo Editor
+  // Studio Opening Animation Overlay before entering Compillo Studio IDE
   const [isBootingEditor, setIsBootingEditor] = useState(false);
-  const [bootStage, setBootStage] = useState(0);
   const [pendingLaunchOptions, setPendingLaunchOptions] = useState<CompilloLaunchOptions | undefined>(
     undefined
   );
-  const bootTimersRef = useRef<number[]>([]);
 
   const activeChapter = PRODUCT_TOUR_CHAPTERS[tourChapter];
   const themeSwatches = Object.values(THEMES).slice(0, 6);
-
-  useEffect(() => {
-    return () => {
-      bootTimersRef.current.forEach((id) => window.clearTimeout(id));
-    };
-  }, []);
 
   const handlePreviewCalcTest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -968,25 +953,11 @@ export const CompilloLandingPage: React.FC<CompilloLandingPageProps> = ({
       return;
     }
 
-    bootTimersRef.current.forEach((id) => window.clearTimeout(id));
-    bootTimersRef.current = [];
     setPendingLaunchOptions(options);
     setIsBootingEditor(true);
-    setBootStage(1);
-
-    bootTimersRef.current.push(
-      window.setTimeout(() => setBootStage(2), 320),
-      window.setTimeout(() => setBootStage(3), 680),
-      window.setTimeout(() => setBootStage(4), 1080),
-      window.setTimeout(() => {
-        onOpenEditor(options);
-      }, 1520)
-    );
   };
 
-  const handleSkipAnimation = () => {
-    bootTimersRef.current.forEach((id) => window.clearTimeout(id));
-    bootTimersRef.current = [];
+  const handleStudioLoaderComplete = () => {
     setIsBootingEditor(false);
     onOpenEditor(pendingLaunchOptions);
   };
@@ -3883,142 +3854,17 @@ JOIN customers ON orders.customer_id = customers.id;`}
         </div>
       </footer>
 
-      {/* Running Animation Overlay before Opening Compillo Editor */}
+      {/* Opening Animation Overlay for Compillo Studio */}
       {isBootingEditor && (
-        <div
-          id="compillo-boot-animation-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Launching Compillo Editor"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-8 backdrop-blur-sm"
-          style={{
-            backgroundColor: isLight ? 'rgba(248, 250, 252, 0.94)' : 'rgba(5, 5, 5, 0.94)',
-          }}
-        >
-          <div
-            className="w-full max-w-4xl rounded-xl border overflow-hidden shadow-2xl compillo-anim-scale-in"
-            style={{ backgroundColor: surfaceBg, borderColor }}
-          >
-            <div
-              className="flex items-center justify-between gap-4 px-4 py-3 border-b"
-              style={{ backgroundColor: currentTheme.ui.titleBarBg, borderColor }}
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <img
-                  src="/compillo-logo.png"
-                  alt="Compillo Studio"
-                  referrerPolicy="no-referrer"
-                  className="h-5 w-auto object-contain shrink-0"
-                />
-                <span className="text-xs sm:text-sm font-semibold truncate">
-                  Compillo Studio — Opening Workbench
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleSkipAnimation}
-                className="px-3 py-1 rounded-md border text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer"
-                style={{ borderColor, color: fgPrimary, backgroundColor: pageBg }}
-              >
-                Skip animation
-              </button>
-            </div>
-
-            <div className="grid grid-cols-12 min-h-[300px]">
-              <div
-                className="col-span-4 border-r p-3 space-y-2 text-xs compillo-anim-slide-right"
-                style={{
-                  backgroundColor: currentTheme.ui.sideBarBg,
-                  borderColor,
-                  opacity: bootStage >= 1 ? 1 : 0,
-                }}
-              >
-                <div className="font-semibold text-[11px] flex items-center gap-1.5" style={{ color: fgMuted }}>
-                  <FolderTree size={12} />
-                  <span>Explorer</span>
-                </div>
-                {bootStage >= 2 && (
-                  <div className="space-y-1 font-compillo-mono text-[11px] compillo-anim-slide-up">
-                    {BOOT_FILES.map((filePath) => (
-                      <div key={filePath} className="truncate py-0.5" style={{ color: fgPrimary }}>
-                        {filePath.replace('projects/calculator/', '')}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="col-span-8 flex flex-col" style={{ backgroundColor: pageBg }}>
-                <div className="flex-1 p-4 font-compillo-mono text-xs space-y-1.5">
-                  {bootStage >= 2 && (
-                    <div className="compillo-anim-slide-up" style={{ color: fgMuted }}>
-                      {'# Initializing Monaco Editor & Themes...'}
-                    </div>
-                  )}
-                  {bootStage >= 3 && (
-                    <>
-                      <div className="compillo-anim-slide-up" style={{ color: fgPrimary }}>
-                        {'from server import evaluate_expr'}
-                      </div>
-                      <div className="compillo-anim-slide-up" style={{ color: accent }}>
-                        {'evaluate_expr("(18 + 6) * 4")  # -> 96'}
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                <div
-                  className="border-t p-3 font-compillo-mono text-[11px] space-y-1.5"
-                  style={{ backgroundColor: currentTheme.ui.panelBg, borderColor }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5" style={{ color: fgMuted }}>
-                      <TerminalIcon size={12} />
-                      <span>Container Shell</span>
-                    </span>
-                    <span className="tabular-nums text-[11px]" style={{ color: accent }}>
-                      {bootStage >= 4
-                        ? '100%'
-                        : bootStage === 3
-                        ? '78%'
-                        : bootStage === 2
-                        ? '45%'
-                        : '18%'}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2" style={{ color: fgPrimary }}>
-                      <Check size={12} style={{ color: accent }} />
-                      <span>Loaded workspace files and {Object.keys(THEMES).length} themes</span>
-                    </div>
-                    {bootStage >= 3 && (
-                      <div
-                        className="flex items-center gap-2 compillo-anim-slide-up"
-                        style={{ color: fgPrimary }}
-                      >
-                        <Check size={12} style={{ color: accent }} />
-                        <span>Mounted Monaco buffers and 15-language runner</span>
-                      </div>
-                    )}
-                    {bootStage >= 4 && (
-                      <div
-                        className="flex items-center gap-2 compillo-anim-slide-up"
-                        style={{ color: accent }}
-                      >
-                        <Check size={12} />
-                        <span>
-                          {pendingLaunchOptions?.startPyCalcDemo
-                            ? 'Launching PyCalc (:5050) inside Compillo Editor...'
-                            : 'Opening Compillo Studio Editor...'}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <StudioLoader
+          theme={currentTheme}
+          finalSubtitle={
+            pendingLaunchOptions?.startPyCalcDemo
+              ? 'Launching PyCalc inside Compillo Studio'
+              : 'Opening Compillo Studio'
+          }
+          onComplete={handleStudioLoaderComplete}
+        />
       )}
     </div>
   );

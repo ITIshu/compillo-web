@@ -24,7 +24,7 @@ interface CodeEditorProps {
   onNewFile: () => void;
   onOpenCommandPalette: () => void;
   onOpenFilePalette: () => void;
-  onLoadSampleProject?: (projectType: 'calculator') => void;
+  onLoadSampleProject?: (projectType: 'calculator' | 'craveo') => void;
   registerAsPrimary?: boolean;
 }
 
@@ -519,21 +519,54 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               Start
             </div>
             {onLoadSampleProject && (
+              <>
+                <button
+                  onClick={() => onLoadSampleProject('calculator')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-all text-xs border ${
+                    currentTheme.type === 'light'
+                      ? 'border-cyan-500/40 hover:bg-cyan-50 bg-cyan-50/20 text-cyan-900'
+                      : 'border-cyan-500/40 hover:bg-cyan-950/30 bg-cyan-950/15 text-cyan-300 hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Sparkles size={14} className="text-cyan-400 shrink-0" />
+                    <span className="font-semibold">Load PyCalc Python Calculator</span>
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                    PORT :5050
+                  </span>
+                </button>
+                <button
+                  onClick={() => onLoadSampleProject('craveo')}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-all text-xs border ${
+                    currentTheme.type === 'light'
+                      ? 'border-orange-500/40 hover:bg-orange-50 bg-orange-50/20 text-orange-900'
+                      : 'border-orange-500/40 hover:bg-orange-950/30 bg-orange-950/15 text-orange-300 hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Sparkles size={14} className="text-orange-400 shrink-0" />
+                    <span className="font-semibold">Load Craveo Food Delivery</span>
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                    PORT :5000
+                  </span>
+                </button>
+              </>
+            )}
+            {onImport && (
               <button
-                onClick={() => onLoadSampleProject('calculator')}
-                className={`w-full flex items-center justify-between p-2.5 rounded-lg transition-all text-xs border ${
+                onClick={onImport}
+                className={`w-full flex items-center justify-between p-2 rounded transition-colors text-xs ${
                   currentTheme.type === 'light'
-                    ? 'border-cyan-500/40 hover:bg-cyan-50 bg-cyan-50/20 text-cyan-900'
-                    : 'border-cyan-500/40 hover:bg-cyan-950/30 bg-cyan-950/15 text-cyan-300 hover:text-white'
+                    ? 'hover:bg-black/5 text-gray-800'
+                    : 'hover:bg-[#007acc]/20 text-[#cccccc] hover:text-white'
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Sparkles size={14} className="text-cyan-400 shrink-0" />
-                  <span className="font-semibold">Load PyCalc Python Calculator</span>
+                  <Upload size={14} className="text-[#38bdf8]" /> Import Project (Folder / ZIP / Files)...
                 </span>
-                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                  PORT :5050
-                </span>
+                <span className="text-[10px] opacity-60">Local</span>
               </button>
             )}
             <button

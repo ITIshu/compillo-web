@@ -1,0 +1,9 @@
+# Craveo — Python dependencies
+# Tested with: Flask 3.1.3, Flask-SQLAlchemy 3.1.1, Flask-Login 0.6.3,
+#              Werkzeug 3.1.9, SQLAlchemy 2.1.8 (Python 3.10 - 3.13)
+
+Flask>=3.0,<4.0
+Flask-SQLAlchemy>=3.1,<4.0
+Flask-Login>=0.6,<1.0
+Werkzeug>=3.0,<4.0
+SQLAlchemy>=2.0,<3.0

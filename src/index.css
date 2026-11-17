@@ -157,10 +157,381 @@
   animation: compilloScaleIn 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* Compillo Editor Opening Sequence & Workbench Entrance */
+@keyframes compilloApertureIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+}
+
+@keyframes compilloOrbitSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes compilloBeamSweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-110%);
+  }
+  20% {
+    opacity: 0.9;
+  }
+  80% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(230%);
+  }
+}
+
+@keyframes compilloBootWarpExit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.045);
+    filter: blur(4px);
+  }
+}
+
+@keyframes compilloCaretBlink {
+  0%, 49% {
+    opacity: 1;
+  }
+  50%, 100% {
+    opacity: 0;
+  }
+}
+
+@keyframes compilloWbTitleDrop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes compilloWbRailReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes compilloWbEditorFocus {
+  from {
+    opacity: 0;
+    transform: scale(0.986) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes compilloWbPanelDock {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes compilloWbTopAccentSweep {
+  0% {
+    opacity: 0.95;
+    transform: scaleX(0.08);
+  }
+  65% {
+    opacity: 0.85;
+    transform: scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1);
+  }
+}
+
+.compillo-boot-aperture {
+  animation: compilloApertureIn 380ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.compillo-boot-orbit {
+  animation: compilloOrbitSpin 3.6s linear infinite;
+}
+
+.compillo-boot-beam {
+  animation: compilloBeamSweep 1.35s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.compillo-boot-exit {
+  animation: compilloBootWarpExit 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.compillo-caret-blink {
+  animation: compilloCaretBlink 900ms steps(2, start) infinite;
+}
+
+.compillo-wb-title {
+  animation: compilloWbTitleDrop 320ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.compillo-wb-rail {
+  animation: compilloWbRailReveal 360ms cubic-bezier(0.16, 1, 0.3, 1) 45ms backwards;
+}
+
+.compillo-wb-editor {
+  animation: compilloWbEditorFocus 400ms cubic-bezier(0.16, 1, 0.3, 1) 70ms backwards;
+}
+
+.compillo-wb-panel {
+  animation: compilloWbPanelDock 380ms cubic-bezier(0.16, 1, 0.3, 1) 110ms backwards;
+}
+
+.compillo-wb-top-sweep {
+  transform-origin: left center;
+  animation: compilloWbTopAccentSweep 620ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Compillo Studio Initial Loading & Reveal Sequence */
+@keyframes compilloStudioRingCw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes compilloStudioRingCcw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes compilloStudioGridIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes compilloStudioStatusIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes compilloStudioLoaderExit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0px);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.035);
+    filter: blur(4px);
+  }
+}
+
+@keyframes compilloStudioReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.992) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.compillo-studio-ring-cw {
+  animation: compilloStudioRingCw 3.8s linear infinite;
+}
+
+.compillo-studio-ring-ccw {
+  animation: compilloStudioRingCcw 5.4s linear infinite;
+}
+
+.compillo-studio-grid-in {
+  animation: compilloStudioGridIn 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.compillo-studio-status-in {
+  animation: compilloStudioStatusIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.compillo-studio-loader-exit {
+  animation: compilloStudioLoaderExit 320ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.compillo-studio-reveal {
+  animation: compilloStudioReveal 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes compilloPrismFloatA {
+  0%, 100% {
+    transform: translate3d(-4%, -3%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 4%, 0) scale(1.08);
+  }
+}
+
+@keyframes compilloPrismFloatB {
+  0%, 100% {
+    transform: translate3d(4%, 3%, 0) scale(1.04);
+  }
+  50% {
+    transform: translate3d(-5%, -4%, 0) scale(0.96);
+  }
+}
+
+@keyframes compilloPrismWave {
+  0%, 100% {
+    transform: scaleY(0.32);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes compilloPrismShimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.compillo-prism-aurora-a {
+  animation: compilloPrismFloatA 4.6s ease-in-out infinite;
+}
+
+.compillo-prism-aurora-b {
+  animation: compilloPrismFloatB 5.2s ease-in-out infinite;
+}
+
+.compillo-prism-bar {
+  transform-origin: center bottom;
+  animation: compilloPrismWave 820ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.compillo-prism-shimmer {
+  animation: compilloPrismShimmer 1.4s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+@keyframes compilloMatrixFall {
+  0% {
+    transform: translateY(-28%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.72;
+  }
+  85% {
+    opacity: 0.72;
+  }
+  100% {
+    transform: translateY(28%);
+    opacity: 0;
+  }
+}
+
+@keyframes compilloHackerScan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.5;
+  }
+  80% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(1000%);
+    opacity: 0;
+  }
+}
+
+.compillo-matrix-col {
+  animation: compilloMatrixFall 2.8s linear infinite;
+}
+
+.compillo-hacker-scan {
+  animation: compilloHackerScan 2.2s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .compillo-anim-slide-up,
   .compillo-anim-slide-right,
-  .compillo-anim-scale-in {
+  .compillo-anim-scale-in,
+  .compillo-boot-aperture,
+  .compillo-boot-orbit,
+  .compillo-boot-beam,
+  .compillo-boot-exit,
+  .compillo-caret-blink,
+  .compillo-wb-title,
+  .compillo-wb-rail,
+  .compillo-wb-editor,
+  .compillo-wb-panel,
+  .compillo-wb-top-sweep,
+  .compillo-studio-ring-cw,
+  .compillo-studio-ring-ccw,
+  .compillo-studio-grid-in,
+  .compillo-studio-status-in,
+  .compillo-studio-loader-exit,
+  .compillo-studio-reveal,
+  .compillo-prism-aurora-a,
+  .compillo-prism-aurora-b,
+  .compillo-prism-bar,
+  .compillo-prism-shimmer,
+  .compillo-matrix-col,
+  .compillo-hacker-scan {
     animation: none !important;
   }
 }
+

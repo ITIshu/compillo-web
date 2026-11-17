@@ -3,6 +3,16 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
+// Suppress harmless Vite HMR WebSocket connection closed warnings in container preview environment
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    const msg = String(event.reason?.message || event.reason || '');
+    if (msg.includes('WebSocket closed without opened') || msg.includes('WebSocket')) {
+      event.preventDefault();
+    }
+  });
+}
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error('Failed to find the root element');

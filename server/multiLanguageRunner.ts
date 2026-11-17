@@ -10,6 +10,7 @@ export interface RunnerSession {
   process?: ChildProcessWithoutNullStreams;
   tempDir: string;
   createdAt: number;
+  resetIdleTimer?: () => void;
 }
 
 const activeSessions = new Map<string, RunnerSession>();
@@ -65,7 +66,8 @@ export function getAvailableCompilers() {
 const MAX_CONCURRENT_RUNNERS = 25;
 const MAX_SOURCE_BYTES = 256 * 1024;
 const MAX_RUNNER_OUTPUT_BYTES = 512 * 1024;
-const RUNNER_EXEC_TIMEOUT_MS = 20_000;
+const RUNNER_IDLE_TIMEOUT_MS = 60_000;
+const RUNNER_MAX_RUNTIME_MS = 180_000;
 
 export function sendStdinToSession(sessionId: string, input: string): boolean {
   const session = activeSessions.get(sessionId);
@@ -73,6 +75,7 @@ export function sendStdinToSession(sessionId: string, input: string): boolean {
     return false;
   }
   try {
+    session.resetIdleTimer?.();
     const text = input.endsWith('\n') ? input : input + '\n';
     session.process.stdin.write(text, 'utf-8');
     return true;
@@ -119,18 +122,53 @@ function attachProcessSafetyGuards(
     // Ignore EPIPE when child exits before stdin completes
   });
 
-  const timeoutTimer = setTimeout(() => {
+  let idleTimer: NodeJS.Timeout | null = null;
+  let maxTimer: NodeJS.Timeout | null = null;
+
+  const clearTimers = () => {
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+    if (maxTimer) {
+      clearTimeout(maxTimer);
+      maxTimer = null;
+    }
+  };
+
+  const resetIdleTimer = () => {
+    if (closed) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (closed) return;
+      sendEvent('stderr', {
+        text: `\n⏱ [Safety Timeout] Execution stopped after ${RUNNER_IDLE_TIMEOUT_MS / 1000}s of inactivity. For web servers, use "serve" or Run Server mode.\n`,
+      });
+      try {
+        runner.kill('SIGKILL');
+      } catch {}
+    }, RUNNER_IDLE_TIMEOUT_MS);
+  };
+
+  const existingSession = activeSessions.get(sessionId);
+  if (existingSession) {
+    existingSession.resetIdleTimer = resetIdleTimer;
+  }
+
+  resetIdleTimer();
+  maxTimer = setTimeout(() => {
     if (closed) return;
     sendEvent('stderr', {
-      text: `\n⏱ [Safety Timeout] Execution stopped after ${RUNNER_EXEC_TIMEOUT_MS / 1000}s to prevent infinite loops.\n`,
+      text: `\n⏱ [Safety Timeout] Execution reached maximum runtime limit (${RUNNER_MAX_RUNTIME_MS / 1000}s) and was stopped.\n`,
     });
     try {
       runner.kill('SIGKILL');
     } catch {}
-  }, RUNNER_EXEC_TIMEOUT_MS);
+  }, RUNNER_MAX_RUNTIME_MS);
 
   const handleChunk = (channel: 'stdout' | 'stderr', chunk: Buffer) => {
     if (truncated || closed) return;
+    resetIdleTimer();
     outputBytes += chunk.length;
     if (outputBytes > MAX_RUNNER_OUTPUT_BYTES) {
       truncated = true;
@@ -151,7 +189,7 @@ function attachProcessSafetyGuards(
   runner.on('error', (err) => {
     if (closed) return;
     closed = true;
-    clearTimeout(timeoutTimer);
+    clearTimers();
     sendEvent('error', { error: err?.message || 'Process failed to start' });
     if (!res.writableEnded && !res.destroyed) res.end();
     activeSessions.delete(sessionId);
@@ -163,7 +201,7 @@ function attachProcessSafetyGuards(
   runner.on('close', (runCode) => {
     if (closed) return;
     closed = true;
-    clearTimeout(timeoutTimer);
+    clearTimers();
     sendEvent('exit', { code: runCode ?? 0 });
     if (!res.writableEnded && !res.destroyed) res.end();
     activeSessions.delete(sessionId);
@@ -173,7 +211,7 @@ function attachProcessSafetyGuards(
   });
 
   res.on('close', () => {
-    clearTimeout(timeoutTimer);
+    clearTimers();
     if (!closed && activeSessions.has(sessionId)) {
       closed = true;
       try {

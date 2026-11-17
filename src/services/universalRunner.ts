@@ -74,9 +74,57 @@ export interface UniversalRunnerState {
   durationMs: number | null;
   plots: string[];
   graphicsWindow: GraphicsWindowState | null;
+  serverUrl?: string | null;
+  serverPort?: number | null;
 }
 
 type RunnerListener = (state: UniversalRunnerState) => void;
+
+function flattenWorkspaceFiles(nodes: FileNode[]): FileNode[] {
+  const result: FileNode[] = [];
+  const walk = (list: FileNode[]) => {
+    for (const node of list) {
+      if (node.type === 'file') {
+        result.push(node);
+      } else if (Array.isArray(node.children) && node.children.length > 0) {
+        walk(node.children);
+      }
+    }
+  };
+  walk(nodes);
+  return result;
+}
+
+function detectWebServerEntry(code: string, language: SupportedLanguage): boolean {
+  if (!code || !code.trim()) return false;
+  if (language === 'python') {
+    const stripped = code
+      .split('\n')
+      .map((line) => line.replace(/#.*$/, ''))
+      .join('\n');
+    return (
+      /\bserve_forever\s*\(/.test(stripped) ||
+      /\b(?:app|application|socketio)\.run\s*\(/.test(stripped) ||
+      /\buvicorn\.run\s*\(/.test(stripped) ||
+      /\bwaitress\.serve\s*\(/.test(stripped) ||
+      /\brun_server\s*\(/.test(stripped) ||
+      /\b(?:HTTPServer|ThreadingHTTPServer|ThreadingTCPServer|TCPServer|ReusableTCPServer|ReusableThreadingTCPServer)\s*\(/.test(
+        stripped
+      )
+    );
+  }
+  if (language === 'javascript' || language === 'typescript') {
+    const stripped = code
+      .split('\n')
+      .map((line) => line.replace(/\/\/.*$/, ''))
+      .join('\n');
+    return (
+      /\.listen\s*\(/.test(stripped) &&
+      /\b(?:createServer|express|fastify|Hono|http|https)\b/.test(stripped)
+    );
+  }
+  return false;
+}
 
 class UniversalRunnerService {
   private state: UniversalRunnerState = {
@@ -91,6 +139,8 @@ class UniversalRunnerService {
     durationMs: null,
     plots: [],
     graphicsWindow: null,
+    serverUrl: null,
+    serverPort: null,
   };
 
   private listeners: RunnerListener[] = [];
@@ -155,6 +205,8 @@ class UniversalRunnerService {
     this.state.graphicsWindow = null;
     this.state.exitCode = null;
     this.state.durationMs = null;
+    this.state.serverUrl = null;
+    this.state.serverPort = null;
     this.notify();
   }
 
@@ -229,11 +281,112 @@ class UniversalRunnerService {
 
     const startTime = performance.now();
 
+    // 0. Web Server Auto-Detection (Flask / http.server / FastAPI / Craveo / PyCalc / Express):
+    // Launch in detached background server mode so it stays alive cleanly without hitting script execution timeouts.
+    if (detectWebServerEntry(code, language)) {
+      this.state.engineName =
+        language === 'python' ? 'Python Background Web Server' : 'Node.js Background Web Server';
+      const flatAll = flattenWorkspaceFiles(allFiles);
+      const filesMap = new Map<string, string>();
+      for (const f of flatAll) {
+        if (typeof f.content === 'string') {
+          filesMap.set(f.path || `/${f.name}`, f.content);
+        }
+      }
+      filesMap.set(file.path || `/${file.name}`, code);
+
+      const filesPayload = Array.from(filesMap.entries()).map(([p, content]) => ({
+        path: p,
+        content,
+      }));
+
+      const hasCalc = flatAll.some((f) => (f.content || '').includes('PyCalc') || f.id.startsWith('calc-'));
+      const hasCraveo =
+        flatAll.some(
+          (f) =>
+            f.id.startsWith('craveo-') ||
+            f.name === 'craveo_runtime.py' ||
+            (f.name === 'seed_data.py' && (f.content || '').includes('seed_all'))
+        ) ||
+        code.includes('craveo_runtime') ||
+        code.includes('Craveo');
+
+      const projectKey = hasCalc ? 'calculator' : hasCraveo ? 'craveo' : 'workspace';
+      const preferredPort = hasCalc ? 5050 : hasCraveo ? 5000 : 5100;
+
+      this.appendLog(
+        `🌐 Detected web server in "${filename}" — launching as detached background server (no timeout)...`,
+        'stdout'
+      );
+
+      try {
+        const res = await fetch('/api/projects/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project: projectKey,
+            port: preferredPort,
+            entryFile: file.path || file.name,
+            restart: true,
+            files: filesPayload,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          this.appendLog(data.error || `Failed to start server on port ${preferredPort}`, 'error');
+          this.state.isRunning = false;
+          this.state.exitCode = 1;
+          this.state.durationMs = Math.round(performance.now() - startTime);
+          this.notify();
+          return;
+        }
+
+        const boundPort = Number(data.port || preferredPort);
+        const fullProxyUrl = `${window.location.origin}${data.proxyUrl || `/api/ports/proxy/${boundPort}/`}`;
+        this.state.serverUrl = fullProxyUrl;
+        this.state.serverPort = boundPort;
+        this.state.isRunning = false;
+        this.state.exitCode = 0;
+        this.state.durationMs = Math.round(performance.now() - startTime);
+
+        this.appendLog(
+          `✓ ${data.label || filename} is live and listening on port :${boundPort}`,
+          'success'
+        );
+        this.appendLog(`  Localhost URL : http://localhost:${boundPort}`, 'stdout');
+        this.appendLog(`  Live Preview  : ${fullProxyUrl}`, 'stdout');
+        this.appendLog(
+          `  Opened in Live Preview and registered in Ports tab (run "ports stop ${boundPort}" in Terminal to stop).`,
+          'stdout'
+        );
+        this.notify();
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('compillo:open-live-preview', {
+              detail: {
+                url: fullProxyUrl,
+                port: boundPort,
+                label: data.label || `${filename} (:${boundPort})`,
+              },
+            })
+          );
+        }
+      } catch (err: any) {
+        this.appendLog(`Failed to start web server: ${err?.message || 'Network error'}`, 'error');
+        this.state.isRunning = false;
+        this.state.exitCode = 1;
+        this.state.durationMs = Math.round(performance.now() - startTime);
+        this.notify();
+      }
+      return;
+    }
+
     // 1. Python execution: delegate to pythonRunner for full CPython / Pyodide WASM + Matplotlib support
     if (language === 'python') {
       this.state.engineName = 'Python 3';
       try {
-        await pythonRunner.runInteractive(code, filename, allFiles);
+        await pythonRunner.runInteractive(code, filename, allFiles, file.path);
         // mirror output: only code stdout, stderr, and graphical plots
         const pyState = pythonRunner.getState();
         pyState.output.forEach((p) => {
@@ -478,9 +631,9 @@ class UniversalRunnerService {
     const code = file.content || '';
 
     // Build workspace files context for multi-file projects (header files, modules)
-    const workspaceFiles = allFiles
-      .filter((f) => f.type === 'file' && f.name !== filename && typeof f.content === 'string')
-      .slice(0, 20)
+    const workspaceFiles = flattenWorkspaceFiles(allFiles)
+      .filter((f) => f.name !== filename && typeof f.content === 'string')
+      .slice(0, 40)
       .map((f) => ({ name: f.name, content: f.content }));
 
     this.activeAbortController = new AbortController();

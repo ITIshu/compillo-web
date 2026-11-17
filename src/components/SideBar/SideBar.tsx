@@ -30,7 +30,7 @@ interface SideBarProps {
   onCloseWorkspace?: () => void;
   onOpenWorkspace?: () => void;
   onRequestNewFile?: (folderId?: string | null) => void;
-  onLoadSampleProject?: (projectType: 'calculator') => void;
+  onLoadSampleProject?: (projectType: 'calculator' | 'craveo') => void;
   recentFiles?: RecentFileItem[];
   onRemoveRecentFile?: (id: string) => void;
   onClearRecentFiles?: () => void;
@@ -43,6 +43,7 @@ interface SideBarProps {
   onRefresh: () => void;
   onExport: () => void;
   onImport: (file: File) => void;
+  onImportProject?: () => void;
   onCommit: (message: string) => void;
   onRevertFile: (fileId: string) => void;
   onOpenDiff: (fileId: string) => void;
@@ -107,6 +108,7 @@ export const SideBar: React.FC<SideBarProps> = ({
   onRefresh,
   onExport,
   onImport,
+  onImportProject,
   onCommit,
   onRevertFile,
   onOpenDiff,
@@ -250,6 +252,7 @@ export const SideBar: React.FC<SideBarProps> = ({
               onRefresh={onRefresh}
               onExport={onExport}
               onImport={onImport}
+              onImportProject={onImportProject}
               revisionVersion={revisionVersion}
               onCreateCheckpoint={onCreateCheckpoint}
               onCompareRevision={onCompareRevision}

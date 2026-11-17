@@ -105,6 +105,21 @@ export function autoHealPythonIndentation(source: string): { code: string; wasFi
   return { code: lines.join('\n'), wasFixed: modified, reason };
 }
 
+function flattenFiles(nodes: FileNode[]): FileNode[] {
+  const result: FileNode[] = [];
+  const walk = (list: FileNode[]) => {
+    for (const node of list) {
+      if (node.type === 'file') {
+        result.push(node);
+      } else if (Array.isArray(node.children) && node.children.length > 0) {
+        walk(node.children);
+      }
+    }
+  };
+  walk(nodes);
+  return result;
+}
+
 class PythonRunnerService {
   private activeSessionId: string | null = null;
   private abortController: AbortController | null = null;
@@ -207,7 +222,8 @@ class PythonRunnerService {
   public async runInteractive(
     code: string,
     filename: string = 'main.py',
-    allFiles: FileNode[] = []
+    allFiles: FileNode[] = [],
+    filePath?: string
   ): Promise<void> {
     // If a session is already running, terminate it first
     if (this.currentState.isRunning && this.activeSessionId) {
@@ -222,11 +238,14 @@ class PythonRunnerService {
 
     const initialOutputs: PythonOutputItem[] = [];
 
-    // Prepare workspace files for relative imports / open() calls
-    const workspaceFiles = allFiles
-      .filter((f) => f.type === 'file' && f.content !== undefined)
+    // Prepare workspace files (including files nested inside folders) for relative imports / open() calls
+    const flatWorkspace = flattenFiles(allFiles);
+    const workspaceFiles = flatWorkspace
+      .filter((f) => f.content !== undefined)
+      .slice(0, 300)
       .map((f) => ({
         name: f.name,
+        path: f.path || `/${f.name}`,
         content: f.name.endsWith('.py') ? autoHealPythonIndentation(f.content || '').code : f.content || '',
       }));
 
@@ -275,7 +294,7 @@ class PythonRunnerService {
       const response = await fetch('/api/python/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: cleanCode, filename, workspaceFiles }),
+        body: JSON.stringify({ code: cleanCode, filename, filePath, workspaceFiles }),
         signal: this.abortController.signal,
       });
 

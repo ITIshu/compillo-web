@@ -119,11 +119,47 @@ export const BottomPanel: React.FC<BottomPanelProps> = ({
       setIsPythonRunning(st.isRunning || pythonRunner.getState().isRunning);
     });
     const onOpenTasks = () => setSelectedChannel('Tasks');
+    const onServerStarted = (e: Event) => {
+      const detail = (e as CustomEvent<{ url?: string; port?: number; label?: string }>).detail;
+      const portNum = Number(detail?.port);
+      if (!Number.isInteger(portNum) || portNum <= 0) return;
+      const proxyUrl = detail?.url || `/api/ports/proxy/${portNum}/`;
+      setForwardedPorts((prev) => {
+        const exists = prev.some((p) => p.port === portNum);
+        if (exists) {
+          return prev.map((p) =>
+            p.port === portNum
+              ? {
+                  ...p,
+                  status: 'listening',
+                  proxyUrl,
+                  runningProcess: detail?.label || p.runningProcess,
+                }
+              : p
+          );
+        }
+        return [
+          ...prev,
+          {
+            id: `port-${portNum}-${Date.now()}`,
+            port: portNum,
+            localAddress: `http://localhost:${portNum}`,
+            proxyUrl,
+            runningProcess: detail?.label || `server-${portNum}`,
+            privacy: 'Public',
+            origin: 'Auto',
+            status: 'listening',
+          },
+        ];
+      });
+    };
     window.addEventListener('compillo:open-output-tasks', onOpenTasks);
+    window.addEventListener('compillo:open-live-preview', onServerStarted);
     return () => {
       unsub1();
       unsub2();
       window.removeEventListener('compillo:open-output-tasks', onOpenTasks);
+      window.removeEventListener('compillo:open-live-preview', onServerStarted);
     };
   }, []);
 
@@ -366,7 +402,7 @@ int main(int argc, char** argv) {
     title: `Terminal ${indexNum}`,
     history: [
       { text: 'Compillo Studio Workspace Shell [Connected to Linux Runtime]', type: 'output' },
-      { text: 'Run real commands (ls, node, python3, grep, mkdir) or type "help".', type: 'output' },
+      { text: 'Your Explorer files sync automatically. Run "serve 8000" (or "python3 your_file.py &") to start & get a localhost port/URL, or type "help".', type: 'output' },
     ],
     input: '',
     sessionId: `sh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -382,7 +418,7 @@ int main(int argc, char** argv) {
       title: 'Terminal 1',
       history: [
         { text: 'Compillo Studio Workspace Shell [Connected to Linux Runtime]', type: 'output' },
-        { text: 'Run real commands (ls, node, python3, grep, mkdir) or type "help".', type: 'output' },
+        { text: 'Your Explorer files sync automatically. Run "serve 8000" (or "python3 your_file.py &") to start & get a localhost port/URL, or type "help".', type: 'output' },
       ],
       input: '',
       sessionId: `sh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -786,7 +822,7 @@ int main(int argc, char** argv) {
   const [launchingProjectKey, setLaunchingProjectKey] = useState<string | null>(null);
 
   const startProjectServer = async (
-    projectKey: 'calculator',
+    projectKey: 'calculator' | 'craveo',
     openPreviewAfter = true
   ): Promise<{ ok: boolean; port?: number; proxyUrl?: string; error?: string }> => {
     setLaunchingProjectKey(projectKey);
@@ -889,10 +925,11 @@ int main(int argc, char** argv) {
         promptEntry,
         {
           text: `Compillo Workspace Shell (Real Linux Bash + IDE Commands):
+  serve [port]        Launch current Explorer project on :[port] (default 8000) & open URL
   run [file]          Launch file in Compillo Multi-Language Code Runner
   ls / cat / mkdir    Execute real shell & filesystem commands (synced to Explorer)
-  node / python3      Execute servers & scripts (append "&" for background servers)
-  ports [subcmd]      Manage & probe live ports (list, scan, add, probe, open, rm, help)
+  node / python3      Execute your own servers & scripts (append "&" for background)
+  ports [subcmd]      Manage & probe live ports (list, scan, add, probe, open, stop, help)
   git status|commit   Inspect or commit workspace changes locally
   theme <name>        Switch IDE theme (dark-modern, cyberpunk, light-modern, monokai)
   clear / Ctrl+L      Clear terminal screen
@@ -900,6 +937,91 @@ int main(int argc, char** argv) {
           type: 'output',
         },
       ]);
+      return;
+    }
+
+    if (mainCmd === 'serve' || mainCmd === 'start') {
+      const requestedPort = arg ? parseInt(arg, 10) : 8000;
+      if (!Number.isInteger(requestedPort) || requestedPort < 1024 || requestedPort > 65535 || requestedPort === 3000 || requestedPort === 8080) {
+        setTerminalHistory((prev) => [
+          ...prev,
+          promptEntry,
+          { text: 'Usage: serve [1024-65535] (ports 3000 and 8080 are reserved)', type: 'error' },
+        ]);
+        return;
+      }
+      const allWs = getAllFiles(files);
+      if (allWs.length === 0) {
+        setTerminalHistory((prev) => [
+          ...prev,
+          promptEntry,
+          { text: 'Workspace is empty. Import a folder/ZIP or create files in Explorer first.', type: 'error' },
+        ]);
+        return;
+      }
+
+      setTerminalHistory((prev) => [...prev, promptEntry]);
+      setIsShellRunning(true);
+      try {
+        const res = await fetch('/api/projects/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project: 'workspace',
+            port: requestedPort,
+            restart: true,
+            files: allWs.map((f) => ({ path: f.path, content: f.content || '' })),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setTerminalHistory((prev) => [
+            ...prev,
+            { text: data.error || `Failed to start project on port ${requestedPort}`, type: 'error' },
+          ]);
+          return;
+        }
+        const boundPort = Number(data.port || requestedPort);
+        const proxyUrl = getProxyUrl(boundPort);
+        setForwardedPorts((prev) => {
+          const exists = prev.some((p) => p.port === boundPort);
+          if (exists) {
+            return prev.map((p) =>
+              p.port === boundPort
+                ? { ...p, status: 'listening', proxyUrl, runningProcess: data.label || 'Workspace Server' }
+                : p
+            );
+          }
+          return [
+            ...prev,
+            {
+              id: `port-${boundPort}-${Date.now()}`,
+              port: boundPort,
+              localAddress: `http://localhost:${boundPort}`,
+              proxyUrl,
+              runningProcess: data.label || 'Workspace Server',
+              privacy: 'Public',
+              origin: 'Auto',
+              status: 'listening',
+            },
+          ];
+        });
+        onOpenLivePreview?.(proxyUrl);
+        setTerminalHistory((prev) => [
+          ...prev,
+          {
+            text: `Server running (${data.label || 'Workspace Server'}):\n  Localhost URL : http://localhost:${boundPort}\n  Preview Proxy : ${proxyUrl}\n  (Opened in Live Preview. Run "ports stop ${boundPort}" to stop.)`,
+            type: 'success',
+          },
+        ]);
+      } catch (err: any) {
+        setTerminalHistory((prev) => [
+          ...prev,
+          { text: `Failed to start workspace server: ${err?.message || 'Network error'}`, type: 'error' },
+        ]);
+      } finally {
+        setIsShellRunning(false);
+      }
       return;
     }
 
@@ -915,6 +1037,7 @@ int main(int argc, char** argv) {
   ports                        List forwarded ports & live probe status
   ports scan                   Scan container TCP sockets & auto-forward active servers
   ports start calculator       Start built-in PyCalc server & open Live Preview
+  ports start craveo           Start Craveo Food Delivery server (:5000) & open Preview
   ports add <port> [label]     Forward <port> (e.g. ports add 8000 python-http)
   ports probe <port>           Check if a server is actively listening on <port>
   ports open <port>            Open proxied <port> in Compillo Live Preview
@@ -929,10 +1052,10 @@ int main(int argc, char** argv) {
 
       if (sub === 'start') {
         const target = (parts[2] || '').toLowerCase();
-        if (target !== 'calculator') {
+        if (target !== 'calculator' && target !== 'craveo') {
           setTerminalHistory((prev) => [
             ...prev,
-            { text: 'Usage: ports start calculator', type: 'error' },
+            { text: 'Usage: ports start <calculator|craveo>', type: 'error' },
           ]);
           return;
         }
@@ -2520,6 +2643,15 @@ int main(int argc, char** argv) {
                 >
                   <Play size={11} fill="currentColor" />
                   <span>{launchingProjectKey === 'calculator' ? 'Starting PyCalc...' : 'PyCalc (:5050)'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={launchingProjectKey !== null}
+                  onClick={() => startProjectServer('craveo', true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium bg-orange-500/15 text-orange-300 hover:bg-orange-500/25 border border-orange-500/30 transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
+                >
+                  <Play size={11} fill="currentColor" />
+                  <span>{launchingProjectKey === 'craveo' ? 'Starting Craveo...' : 'Craveo (:5000)'}</span>
                 </button>
               </div>
             </div>

@@ -31,7 +31,7 @@ interface CodeRunnerViewProps {
   files: FileNode[];
   onRunActiveFile: () => void;
   onUpdateFileContent?: (path: string, newContent: string) => void;
-  onOpenLivePreview?: () => void;
+  onOpenLivePreview?: (url?: string) => void;
 }
 
 const LANGUAGE_CONFIG: Record<
@@ -277,10 +277,20 @@ export const CodeRunnerView: React.FC<CodeRunnerViewProps> = ({
 
         {/* Right: Actions */}
         <div className="flex items-center gap-1 shrink-0 ml-2">
-          {/* HTML Preview Trigger */}
-          {detectedLang === 'html' && onOpenLivePreview && (
+          {/* Web Server / HTML Preview Trigger */}
+          {runnerState.serverUrl && onOpenLivePreview && (
             <button
-              onClick={onOpenLivePreview}
+              onClick={() => onOpenLivePreview(runnerState.serverUrl || undefined)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors text-[10.5px] font-semibold"
+              title={`Open ${runnerState.serverUrl} in Live Preview`}
+            >
+              <ExternalLink size={11} />
+              <span>Open Live Preview{runnerState.serverPort ? ` (:${runnerState.serverPort})` : ''}</span>
+            </button>
+          )}
+          {detectedLang === 'html' && !runnerState.serverUrl && onOpenLivePreview && (
+            <button
+              onClick={() => onOpenLivePreview()}
               className="flex items-center gap-1 px-2 py-0.5 rounded bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition-colors text-[10.5px]"
               title="Open Live Preview in Split Pane"
             >

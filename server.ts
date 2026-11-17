@@ -180,6 +180,7 @@ interface PythonSession {
   process: ChildProcessWithoutNullStreams;
   tempDir: string;
   createdAt: number;
+  resetIdleTimer?: () => void;
 }
 
 const activeSessions = new Map<string, PythonSession>();
@@ -380,7 +381,8 @@ function checkExecutionRateLimit(req: express.Request, maxPerMinute = 45): boole
 const MAX_PYTHON_SESSIONS = 25;
 const MAX_CODE_BYTES = 256 * 1024;
 const MAX_OUTPUT_BYTES = 512 * 1024;
-const PYTHON_EXEC_TIMEOUT_MS = 20_000;
+const PYTHON_IDLE_TIMEOUT_MS = 60_000;
+const PYTHON_MAX_RUNTIME_MS = 180_000;
 
 async function startServer() {
   ensureMatplotlibConfig();
@@ -914,8 +916,9 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
       return;
     }
 
-    const { project, port: reqPort, files, restart } = req.body || {};
+    const { project, port: reqPort, files, restart, entryFile } = req.body || {};
     const projectKey = typeof project === 'string' ? project.toLowerCase() : 'workspace';
+    const requestedEntry = typeof entryFile === 'string' ? entryFile.replace(/^\/+/, '').replace(/\\/g, '/').trim() : '';
 
     let targetPort = parseInt(String(reqPort ?? ''), 10);
     let targetDir = '';
@@ -926,6 +929,11 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
       if (!Number.isInteger(targetPort)) targetPort = 5050;
       targetDir = path.resolve(process.cwd(), 'projects/calculator');
       label = 'PyCalc Calculator';
+    } else if (projectKey === 'craveo') {
+      if (!Number.isInteger(targetPort)) targetPort = 5000;
+      targetDir = path.resolve(process.cwd(), 'projects/craveo');
+      scriptName = 'app.py';
+      label = 'Craveo Food Delivery';
     } else {
       if (!Number.isInteger(targetPort)) targetPort = 5100;
       label = 'Workspace Server';
@@ -935,11 +943,13 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
       targetPort = 5100;
     }
 
+    let spawnCwd = targetDir;
+
     // If workspace files were provided, materialize into a clean run directory so live edits take effect
     if (Array.isArray(files) && files.length > 0) {
       const runDir = path.join(os.tmpdir(), `compillo_app_${targetPort}`);
       fs.mkdirSync(runDir, { recursive: true });
-      for (const f of files.slice(0, 50)) {
+      for (const f of files.slice(0, 300)) {
         if (!f || typeof f.path !== 'string' || typeof f.content !== 'string') continue;
         if (Buffer.byteLength(f.content, 'utf-8') > MAX_CODE_BYTES) continue;
         const rel = f.path.replace(/^\/+/, '');
@@ -950,8 +960,60 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
         fs.writeFileSync(full, f.content, 'utf-8');
       }
       targetDir = runDir;
-      if (fs.existsSync(path.join(runDir, 'server.py'))) {
-        scriptName = 'server.py';
+      spawnCwd = runDir;
+
+      let resolvedEntry = '';
+      if (requestedEntry && !requestedEntry.includes('..')) {
+        const candidate = path.resolve(runDir, requestedEntry);
+        if (candidate.startsWith(runDir + path.sep) && fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+          resolvedEntry = candidate;
+        }
+      }
+
+      if (!resolvedEntry) {
+        const preferredNames = ['server.py', 'app.py', 'main.py', 'server.js', 'index.js'];
+        for (const name of preferredNames) {
+          const rootCand = path.join(runDir, name);
+          if (fs.existsSync(rootCand)) {
+            resolvedEntry = rootCand;
+            break;
+          }
+        }
+        // Search nested folders (e.g., imported /craveo/app.py or /my-project/server.py)
+        if (!resolvedEntry) {
+          const queue: string[] = [runDir];
+          while (queue.length > 0 && !resolvedEntry) {
+            const dir = queue.shift()!;
+            let entries: fs.Dirent[] = [];
+            try {
+              entries = fs.readdirSync(dir, { withFileTypes: true });
+            } catch {
+              continue;
+            }
+            for (const name of preferredNames) {
+              const found = entries.find((e) => e.isFile() && e.name === name);
+              if (found) {
+                resolvedEntry = path.join(dir, found.name);
+                break;
+              }
+            }
+            if (!resolvedEntry) {
+              for (const entry of entries) {
+                if (entry.isDirectory() && entry.name !== 'node_modules' && !entry.name.startsWith('.')) {
+                  queue.push(path.join(dir, entry.name));
+                }
+              }
+            }
+          }
+        }
+      }
+
+      if (resolvedEntry) {
+        spawnCwd = path.dirname(resolvedEntry);
+        scriptName = path.basename(resolvedEntry);
+        if (label === 'Workspace Server') {
+          label = `${scriptName} Server`;
+        }
       } else {
         scriptName = '';
       }
@@ -985,6 +1047,10 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
       await new Promise((r) => setTimeout(r, 250));
     }
 
+    const prePorts = new Set((await scanListeningTcpPorts().catch(() => [])).map((p) => p.port));
+
+    const isNodeScript = /\.(js|mjs|cjs)$/i.test(scriptName);
+    const runnerBin = isNodeScript ? 'node' : getPythonBin();
     const args = scriptName ? [scriptName, String(targetPort)] : ['-m', 'http.server', String(targetPort)];
     if (!scriptName) {
       label = 'Static Web Server';
@@ -992,11 +1058,23 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
 
     const logFile = path.join(os.tmpdir(), `compillo_app_${targetPort}.log`);
     const outFd = fs.openSync(logFile, 'w');
-    const child = spawn('python3', args, {
-      cwd: targetDir,
+    const child = spawn(runnerBin, args, {
+      cwd: spawnCwd || targetDir,
       detached: true,
       stdio: ['ignore', outFd, outFd],
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: '1',
+        PORT: String(targetPort),
+        CRAVEO_PORT: String(targetPort),
+        PYCALC_PORT: String(targetPort),
+      },
+    });
+    let exitedEarly = false;
+    let earlyExitCode: number | null = null;
+    child.on('exit', (code) => {
+      exitedEarly = true;
+      earlyExitCode = code;
     });
     child.unref();
     try {
@@ -1006,10 +1084,25 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
     }
 
     let ready = false;
-    for (let i = 0; i < 16; i++) {
+    let boundPort = targetPort;
+    for (let i = 0; i < 24; i++) {
       await new Promise((r) => setTimeout(r, 180));
-      if (await probeLocalPort(targetPort, 200)) {
+      if (await probeLocalPort(targetPort, 180)) {
         ready = true;
+        boundPort = targetPort;
+        break;
+      }
+      // Also detect if the user's server bound a custom hardcoded port (e.g. 5000, 8000, 8888)
+      const nowPorts = await scanListeningTcpPorts().catch(() => []);
+      const newlyBound = nowPorts.find(
+        (p) => !prePorts.has(p.port) && p.port !== 3000 && p.port !== 8080 && p.port !== PORT
+      );
+      if (newlyBound && (await probeLocalPort(newlyBound.port, 180))) {
+        ready = true;
+        boundPort = newlyBound.port;
+        break;
+      }
+      if (exitedEarly) {
         break;
       }
     }
@@ -1017,22 +1110,22 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
     if (!ready) {
       let logTail = '';
       try {
-        logTail = fs.readFileSync(logFile, 'utf-8').slice(-400);
+        logTail = fs.readFileSync(logFile, 'utf-8').slice(-600).trim();
       } catch {
         // ignore
       }
       res.status(500).json({
-        error: `Server did not listen on port ${targetPort}${logTail ? `: ${logTail}` : ''}`,
+        error: `Server did not listen on port ${targetPort}${exitedEarly ? ` (exited with code ${earlyExitCode ?? 1})` : ''}${logTail ? `: ${logTail}` : ''}`,
       });
       return;
     }
 
     res.json({
       ok: true,
-      port: targetPort,
+      port: boundPort,
       pid: child.pid,
       label,
-      proxyUrl: `/api/ports/proxy/${targetPort}/`,
+      proxyUrl: `/api/ports/proxy/${boundPort}/`,
     });
   });
 
@@ -1487,7 +1580,7 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
 
       // Materialize workspace files cleanly into rootDir
       if (Array.isArray(files)) {
-        for (const f of files.slice(0, 50)) {
+        for (const f of files.slice(0, 300)) {
           if (!f || typeof f.path !== 'string' || typeof f.content !== 'string') continue;
           if (Buffer.byteLength(f.content, 'utf-8') > MAX_CODE_BYTES) continue;
           const rel = f.path.replace(/^\/+/, '');
@@ -1591,7 +1684,7 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
         // Scan workspace root to sync text files modified/created by shell commands
         const syncedFiles: Array<{ path: string; name: string; content: string }> = [];
         const walk = (dir: string) => {
-          if (syncedFiles.length >= 100) return;
+          if (syncedFiles.length >= 300) return;
           const entries = fs.readdirSync(dir, { withFileTypes: true });
           for (const entry of entries) {
             if (
@@ -2170,16 +2263,19 @@ ${(code || '').slice(0, 10000)}
       // Automatically sanitize and auto-heal Python indentation to prevent IndentationError
       const { code: healedCode, wasFixed, reason } = autoHealPythonIndentation(code);
 
-      // Write any additional workspace files (for multi-file modules, imports, data files)
+      // Write any additional workspace files (for multi-file modules, imports, data files, preserving folders)
       if (Array.isArray(workspaceFiles)) {
-        for (const file of workspaceFiles.slice(0, 40)) {
-          if (file && file.name && typeof file.content === 'string') {
+        for (const file of workspaceFiles.slice(0, 300)) {
+          if (file && (file.path || file.name) && typeof file.content === 'string') {
             if (Buffer.byteLength(file.content, 'utf-8') > MAX_CODE_BYTES) continue;
-            const safeName = path.basename(String(file.name));
-            if (!safeName || safeName === 'sitecustomize.py') continue;
-            const safePath = path.join(tempDir, safeName);
+            const rawRel = typeof file.path === 'string' && file.path.trim() ? file.path : String(file.name);
+            const rel = rawRel.replace(/^\/+/, '').replace(/\\/g, '/');
+            if (!rel || rel.includes('..') || path.basename(rel) === 'sitecustomize.py') continue;
+            const safePath = path.resolve(tempDir, rel);
+            if (!safePath.startsWith(tempDir + path.sep)) continue;
+            fs.mkdirSync(path.dirname(safePath), { recursive: true });
             // Also heal python workspace files if they end in .py
-            const fileContent = safeName.endsWith('.py')
+            const fileContent = safePath.endsWith('.py')
               ? autoHealPythonIndentation(file.content).code
               : file.content;
             fs.writeFileSync(safePath, fileContent, 'utf-8');
@@ -2214,8 +2310,21 @@ except Exception:
 `;
       fs.writeFileSync(path.join(tempDir, 'sitecustomize.py'), sitecustomizeCode, 'utf-8');
 
-      // Write primary target script (strictly confined inside tempDir)
-      const scriptPath = path.join(tempDir, safeFilename);
+      // Write primary target script (strictly confined inside tempDir; preserve relative subfolder if available)
+      const rawEntryRel =
+        typeof req.body?.filePath === 'string' && req.body.filePath.trim()
+          ? req.body.filePath.replace(/^\/+/, '').replace(/\\/g, '/')
+          : '';
+      let scriptPath = path.join(tempDir, safeFilename);
+      let scriptCwd = tempDir;
+      if (rawEntryRel && !rawEntryRel.includes('..')) {
+        const nestedCandidate = path.resolve(tempDir, rawEntryRel);
+        if (nestedCandidate.startsWith(tempDir + path.sep)) {
+          fs.mkdirSync(path.dirname(nestedCandidate), { recursive: true });
+          scriptPath = nestedCandidate;
+          scriptCwd = path.dirname(nestedCandidate);
+        }
+      }
       fs.writeFileSync(scriptPath, healedCode, 'utf-8');
 
       // Set headers for Server-Sent Events (SSE) / streaming
@@ -2232,9 +2341,10 @@ except Exception:
 
       // Spawn unbuffered python3 with headless matplotlib environment
       const pythonBin = getPythonBin();
-      const currentPythonPath = process.env.PYTHONPATH ? `${tempDir}${path.delimiter}${process.env.PYTHONPATH}` : tempDir;
+      const extraPaths = scriptCwd !== tempDir ? `${scriptCwd}${path.delimiter}${tempDir}` : tempDir;
+      const currentPythonPath = process.env.PYTHONPATH ? `${extraPaths}${path.delimiter}${process.env.PYTHONPATH}` : extraPaths;
       const child = spawn(pythonBin, ['-u', scriptPath], {
-        cwd: tempDir,
+        cwd: scriptCwd,
         env: {
           ...process.env,
           PATH: `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${process.env.PATH || ''}`,
@@ -2251,11 +2361,45 @@ except Exception:
         // Prevent EPIPE crash if process exits while client writes stdin
       });
 
+      let totalOutputBytes = 0;
+      let truncated = false;
+      let isClosed = false;
+      let idleTimer: NodeJS.Timeout | null = null;
+      let maxTimer: NodeJS.Timeout | null = null;
+
+      const clearTimers = () => {
+        if (idleTimer) {
+          clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+        if (maxTimer) {
+          clearTimeout(maxTimer);
+          maxTimer = null;
+        }
+      };
+
+      const resetIdleTimer = () => {
+        if (isClosed) return;
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          if (isClosed) return;
+          safeWriteEvent('stderr', {
+            text: `\n⏱ [Safety Timeout] Python execution stopped after ${PYTHON_IDLE_TIMEOUT_MS / 1000}s of inactivity. If you are running a web server, use Launch App / "serve" or click Run on the server file.\n`,
+          });
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            // ignore
+          }
+        }, PYTHON_IDLE_TIMEOUT_MS);
+      };
+
       const session: PythonSession = {
         id: sessionId,
         process: child,
         tempDir,
         createdAt: Date.now(),
+        resetIdleTimer,
       };
       activeSessions.set(sessionId, session);
 
@@ -2269,24 +2413,22 @@ except Exception:
         });
       }
 
-      let totalOutputBytes = 0;
-      let truncated = false;
-      let isClosed = false;
-
-      const execTimer = setTimeout(() => {
+      resetIdleTimer();
+      maxTimer = setTimeout(() => {
         if (isClosed) return;
         safeWriteEvent('stderr', {
-          text: `\n⏱ [Safety Timeout] Python execution stopped after ${PYTHON_EXEC_TIMEOUT_MS / 1000}s to prevent infinite loops.\n`,
+          text: `\n⏱ [Safety Timeout] Python script reached maximum runtime limit (${PYTHON_MAX_RUNTIME_MS / 1000}s) and was stopped.\n`,
         });
         try {
           child.kill('SIGKILL');
         } catch {
           // ignore
         }
-      }, PYTHON_EXEC_TIMEOUT_MS);
+      }, PYTHON_MAX_RUNTIME_MS);
 
       child.stdout.on('data', (data: Buffer) => {
         if (truncated) return;
+        resetIdleTimer();
         totalOutputBytes += data.length;
         if (totalOutputBytes > MAX_OUTPUT_BYTES) {
           truncated = true;
@@ -2305,6 +2447,7 @@ except Exception:
 
       child.stderr.on('data', (data: Buffer) => {
         if (truncated) return;
+        resetIdleTimer();
         totalOutputBytes += data.length;
         if (totalOutputBytes > MAX_OUTPUT_BYTES) {
           truncated = true;
@@ -2328,7 +2471,7 @@ except Exception:
 
       child.on('close', (code, signal) => {
         isClosed = true;
-        clearTimeout(execTimer);
+        clearTimers();
         safeWriteEvent('exit', { code, signal });
         if (!res.writableEnded && !res.destroyed) {
           res.end();
@@ -2344,7 +2487,7 @@ except Exception:
       });
 
       res.on('close', () => {
-        clearTimeout(execTimer);
+        clearTimers();
         if (!isClosed && activeSessions.has(sessionId)) {
           try {
             child.kill('SIGKILL');
@@ -2385,6 +2528,7 @@ except Exception:
     }
 
     try {
+      session.resetIdleTimer?.();
       const text = input.endsWith('\n') ? input : input + '\n';
       session.process.stdin.write(text, 'utf-8', (err) => {
         if (err) {

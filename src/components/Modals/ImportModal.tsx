@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FolderArchive, FileCode, X, CheckCircle, FilePlus } from 'lucide-react';
+import { Upload, FolderArchive, FolderOpen, FileCode, X, CheckCircle } from 'lucide-react';
 import { CompilloThemeDefinition } from '../../services/themes';
 
 interface ImportModalProps {
@@ -17,10 +17,11 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   onImportFiles,
   onImportZip,
 }) => {
-  const [activeTab, setActiveTab] = useState<'files' | 'zip'>('files');
+  const [activeTab, setActiveTab] = useState<'files' | 'folder' | 'zip'>('folder');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
@@ -40,7 +41,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedList = Array.from(e.dataTransfer.files);
-      // Check if dropped item is a zip
       const zipFile = droppedList.find((f) => f.name.endsWith('.zip'));
       if (zipFile) {
         onImportZip(zipFile);
@@ -57,6 +57,27 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
+  const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const list = Array.from(e.target.files).filter((f) => {
+        const rel = (f as any).webkitRelativePath || f.name;
+        return (
+          !rel.includes('/node_modules/') &&
+          !rel.includes('/venv/') &&
+          !rel.includes('/.venv/') &&
+          !rel.includes('/__pycache__/') &&
+          !rel.includes('/.git/')
+        );
+      });
+      if (list.length > 0) {
+        onImportFiles(list);
+        setSelectedFiles([]);
+        onClose();
+      }
+    }
+    e.target.value = '';
+  };
+
   const handleZipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -68,6 +89,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const handleConfirmImportFiles = () => {
     if (selectedFiles.length > 0) {
       onImportFiles(selectedFiles);
+      setSelectedFiles([]);
       onClose();
     }
   };
@@ -93,7 +115,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         >
           <div className="flex items-center gap-2 font-medium text-[13px]">
             <Upload size={16} className="text-[#007acc]" />
-            <span>Import into Compillo Workspace</span>
+            <span>Import Project into Compillo Workspace</span>
           </div>
           <button
             onClick={onClose}
@@ -109,26 +131,37 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           style={{ borderColor: currentTheme.ui.sideBarBorder }}
         >
           <button
-            onClick={() => setActiveTab('files')}
-            className={`flex-1 py-2.5 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
-              activeTab === 'files'
+            onClick={() => setActiveTab('folder')}
+            className={`flex-1 py-2.5 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-1.5 ${
+              activeTab === 'folder'
                 ? 'border-[#007acc] text-white'
                 : 'border-transparent opacity-60 hover:opacity-100'
             }`}
           >
-            <FileCode size={14} />
-            <span>Local Files</span>
+            <FolderOpen size={14} />
+            <span>Project Folder</span>
           </button>
           <button
             onClick={() => setActiveTab('zip')}
-            className={`flex-1 py-2.5 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-1.5 ${
               activeTab === 'zip'
                 ? 'border-[#007acc] text-white'
                 : 'border-transparent opacity-60 hover:opacity-100'
             }`}
           >
             <FolderArchive size={14} />
-            <span>Project ZIP Archive</span>
+            <span>ZIP Archive</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('files')}
+            className={`flex-1 py-2.5 text-center font-medium transition-colors border-b-2 flex items-center justify-center gap-1.5 ${
+              activeTab === 'files'
+                ? 'border-[#007acc] text-white'
+                : 'border-transparent opacity-60 hover:opacity-100'
+            }`}
+          >
+            <FileCode size={14} />
+            <span>Files</span>
           </button>
         </div>
 
@@ -141,6 +174,16 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           className="hidden"
         />
         <input
+          ref={folderInputRef}
+          type="file"
+          // @ts-expect-error webkitdirectory is standard in Chromium/Firefox/Safari folder pickers
+          webkitdirectory=""
+          directory=""
+          multiple
+          onChange={handleFolderChange}
+          className="hidden"
+        />
+        <input
           ref={zipInputRef}
           type="file"
           accept=".zip"
@@ -150,7 +193,48 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
         {/* Content Body */}
         <div className="p-5 text-[12px] space-y-4">
-          {activeTab === 'files' ? (
+          {activeTab === 'folder' ? (
+            <>
+              <div
+                onClick={() => folderInputRef.current?.click()}
+                className={`p-6 border-2 border-dashed rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                  currentTheme.type === 'light'
+                    ? 'border-gray-300 hover:border-[#007acc] hover:bg-blue-50/30'
+                    : 'border-white/15 hover:border-[#007acc] hover:bg-[#007acc]/10'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-full bg-[#007acc]/20 text-[#38bdf8] flex items-center justify-center mb-3">
+                  <FolderOpen size={22} />
+                </div>
+                <div className="font-semibold text-[13px]">
+                  Select a local project folder
+                </div>
+                <p className="text-[11px] opacity-65 mt-1 max-w-sm">
+                  Imports all source files and subfolders (`templates/`, `static/`, `src/`, etc.) directly into Compillo, ready to run via Terminal (`serve 8000` or `python3 app.py &amp;`).
+                </p>
+                <button
+                  type="button"
+                  className="mt-4 px-4 py-1.5 rounded-lg bg-[#007acc] hover:bg-[#0069b3] text-white font-medium text-[12px] flex items-center gap-2 shadow-sm transition-colors"
+                >
+                  <FolderOpen size={14} />
+                  <span>Choose Project Folder</span>
+                </button>
+              </div>
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={`px-4 py-2 rounded-lg transition-colors text-[12px] ${
+                    currentTheme.type === 'light'
+                      ? 'hover:bg-gray-200 text-gray-700'
+                      : 'hover:bg-white/10 text-gray-300'
+                  }`}
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : activeTab === 'files' ? (
             <>
               {/* Drop Area */}
               <div
@@ -173,11 +257,10 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                   Drop files here or click to browse
                 </div>
                 <p className="text-[11px] opacity-60 mt-1">
-                  Supports code files (Python, C/C++, Java, TS/JS, HTML, CSS, JSON, etc.)
+                  Supports code files (Python, Node.js, HTML, CSS, C/C++, Java, JSON, etc.)
                 </p>
               </div>
 
-              {/* Selected Files List Preview */}
               {selectedFiles.length > 0 && (
                 <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                   <div className="text-[11px] font-semibold opacity-70">

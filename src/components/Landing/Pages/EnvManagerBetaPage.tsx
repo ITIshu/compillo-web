@@ -69,16 +69,26 @@ export const EnvManagerBetaPage: React.FC<EnvManagerBetaPageProps> = ({ tokens }
 
   const decodeJwt = () => {
     try {
-      const parts = jwtToken.split('.');
+      const parts = jwtToken.trim().split('.');
       if (parts.length !== 3) {
         setJwtDecoded(JSON.stringify({ error: "Invalid JWT structure (must have 3 parts separated by dots)" }, null, 2));
         return;
       }
-      const header = JSON.parse(atob(parts[0]));
-      const payload = JSON.parse(atob(parts[1]));
+      const b64UrlDecode = (str: string) => {
+        let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4 !== 0) b64 += '=';
+        return decodeURIComponent(
+          atob(b64)
+            .split('')
+            .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+            .join('')
+        );
+      };
+      const header = JSON.parse(b64UrlDecode(parts[0]));
+      const payload = JSON.parse(b64UrlDecode(parts[1]));
       setJwtDecoded(JSON.stringify({ header, payload, signatureStatus: "Valid format (signature unverified)" }, null, 2));
     } catch (err: any) {
-      setJwtDecoded(JSON.stringify({ error: "Failed to decode JWT base64: " + err.message }, null, 2));
+      setJwtDecoded(JSON.stringify({ error: "Failed to decode JWT: " + err.message }, null, 2));
     }
   };
 
