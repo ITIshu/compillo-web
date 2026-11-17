@@ -387,13 +387,43 @@ const PYTHON_MAX_RUNTIME_MS = 180_000;
 async function startServer() {
   ensureMatplotlibConfig();
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Baseline HTTP security headers (preserves iframe preview embedding for Compillo workspace)
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+
+  // These endpoints run user-controlled code or interact with local processes.
+  // Keep them disabled on public deployments unless execution is isolated in a
+  // dedicated sandbox service. Render does not sandbox child processes for us.
+  const unsafeExecutionPrefixes = [
+    '/api/ports',
+    '/api/projects/start',
+    '/api/deploy',
+    '/api/sql/run',
+    '/api/beta/code-audit',
+    '/api/beta/site-audit',
+    '/api/beta/http-test',
+    '/api/beta/benchmark',
+    '/api/beta/leetcode/run',
+    '/api/beta/ast-parse',
+    '/api/runner',
+    '/api/python',
+  ];
+  app.use((req, res, next) => {
+    const isUnsafeExecutionRoute = unsafeExecutionPrefixes.some(
+      (prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`)
+    );
+    if (isUnsafeExecutionRoute && process.env.ENABLE_UNSAFE_EXECUTION !== 'true') {
+      res.status(503).json({
+        error: 'Code execution is disabled until an isolated runner is configured.',
+      });
+      return;
+    }
     next();
   });
 
