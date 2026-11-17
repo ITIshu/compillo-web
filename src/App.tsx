@@ -891,7 +891,7 @@ export default function App() {
         return;
       }
 
-      const proxyUrl = `${window.location.origin}/api/ports/proxy/${data.port}/`;
+      const proxyUrl = data.proxyUrl || `${window.location.origin}/api/ports/proxy/${data.port}/`;
       setLivePreviewUrl(proxyUrl);
       setIsLivePreviewOpen(true);
       setPreviewRefreshToken((v) => v + 1);

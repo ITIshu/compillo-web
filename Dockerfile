@@ -3,7 +3,7 @@ FROM oven/bun:1.4.4 AS builder
 
 WORKDIR /app
 COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+RUN bun install
 
 COPY . .
 RUN bun run build
@@ -18,7 +18,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock ./
-RUN bun install --production --frozen-lockfile
+RUN bun install --production
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public

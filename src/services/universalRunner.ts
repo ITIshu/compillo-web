@@ -342,7 +342,8 @@ class UniversalRunnerService {
         }
 
         const boundPort = Number(data.port || preferredPort);
-        const fullProxyUrl = `${window.location.origin}${data.proxyUrl || `/api/ports/proxy/${boundPort}/`}`;
+        const launchUrl = data.proxyUrl || `/api/ports/proxy/${boundPort}/`;
+        const fullProxyUrl = /^https?:\/\//i.test(launchUrl) ? launchUrl : `${window.location.origin}${launchUrl}`;
         this.state.serverUrl = fullProxyUrl;
         this.state.serverPort = boundPort;
         this.state.isRunning = false;
