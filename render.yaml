@@ -1,11 +1,9 @@
 services:
   - type: web
     name: compillo-studio
-    runtime: node
+    runtime: docker
     plan: free
     region: oregon
-    buildCommand: bun install --frozen-lockfile && bun run build
-    startCommand: node dist/server.cjs
     envVars:
       - key: NODE_ENV
         value: production
