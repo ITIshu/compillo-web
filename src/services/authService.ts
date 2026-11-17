@@ -18,22 +18,6 @@ export interface UserProfile {
 const STORAGE_CURRENT_USER_KEY = 'compillo_auth_current_user_v2';
 const STORAGE_REGISTERED_USERS_KEY = 'compillo_saved_users_db_v2';
 
-// Default initial user for seamless first-time experience
-const DEFAULT_INITIAL_USER: UserProfile = {
-  id: 'usr-k-lavania-01',
-  email: 'k@lavania.in',
-  name: 'K. Lavania',
-  avatarUrl: 'https://api.dicebear.com/7.x/bottts/svg?seed=k-lavania',
-  provider: 'google',
-  role: 'Student',
-  university: 'Rajasthan Technical University (RTU)',
-  bio: 'Computer Science Scholar & Full-Stack Developer exploring Python, Algorithms, and Cloud Systems.',
-  location: 'Kota, Rajasthan, India',
-  githubUsername: 'klavania',
-  createdAt: '2025-01-15T10:00:00.000Z',
-  lastLoginAt: new Date().toISOString(),
-};
-
 class AuthService {
   private currentUser: UserProfile | null = null;
   private registeredUsers: UserProfile[] = [];
@@ -43,36 +27,40 @@ class AuthService {
     this.init();
   }
 
-  private init() {
-    try {
-      // Load registered users database
-      const rawUsers = localStorage.getItem(STORAGE_REGISTERED_USERS_KEY);
-      if (rawUsers) {
-        this.registeredUsers = JSON.parse(rawUsers);
-      } else {
-        this.registeredUsers = [DEFAULT_INITIAL_USER];
-        this.saveRegisteredUsers();
-      }
-
-      // Load current user
-      const rawCurrent = localStorage.getItem(STORAGE_CURRENT_USER_KEY);
-      if (rawCurrent !== null) {
-        if (rawCurrent === 'null' || rawCurrent === '') {
-          this.currentUser = null;
-        } else {
-          this.currentUser = JSON.parse(rawCurrent);
-        }
-      } else {
-        // By default on clean run, set to DEFAULT_INITIAL_USER
-        this.currentUser = DEFAULT_INITIAL_USER;
-        this.saveCurrentUser();
-      }
-    } catch {
-      this.currentUser = DEFAULT_INITIAL_USER;
-      this.registeredUsers = [DEFAULT_INITIAL_USER];
-    }
+  private isSeededDemoUser(user: UserProfile | null): boolean {
+    if (!user) return false;
+    const email = user.email?.trim().toLowerCase();
+    return (
+      user.id === 'usr-k-lavania-01' ||
+      email === 'k@lavania.in' ||
+      email === 'klavania@github.compillo.dev'
+    );
   }
 
+  private init() {
+    try {
+      const rawUsers = localStorage.getItem(STORAGE_REGISTERED_USERS_KEY);
+      const parsedUsers = rawUsers ? JSON.parse(rawUsers) : [];
+      this.registeredUsers = Array.isArray(parsedUsers)
+        ? parsedUsers.filter((user: UserProfile) => !this.isSeededDemoUser(user))
+        : [];
+
+      const rawCurrent = localStorage.getItem(STORAGE_CURRENT_USER_KEY);
+      if (rawCurrent && rawCurrent !== 'null') {
+        const parsedCurrent = JSON.parse(rawCurrent) as UserProfile;
+        this.currentUser = this.isSeededDemoUser(parsedCurrent) ? null : parsedCurrent;
+      } else {
+        this.currentUser = null;
+      }
+
+      // Persist the cleanup so seeded demo profiles do not reappear on the next load.
+      this.saveCurrentUser();
+      this.saveRegisteredUsers();
+    } catch {
+      this.currentUser = null;
+      this.registeredUsers = [];
+    }
+  }
   private saveCurrentUser() {
     try {
       if (this.currentUser) {
@@ -126,8 +114,9 @@ class AuthService {
     avatarUrl?: string;
     university?: string;
   }): Promise<UserProfile> {
-    const email = options?.email || 'k@lavania.in';
-    const name = options?.name || (email.startsWith('k@') ? 'K. Lavania' : email.split('@')[0]);
+    const email = options?.email?.trim();
+    if (!email) throw new Error('Google did not provide an email address. Please try signing in again.');
+    const name = options?.name?.trim() || email.split('@')[0];
     const avatarUrl =
       options?.avatarUrl ||
       `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`;
@@ -240,15 +229,16 @@ class AuthService {
     name?: string;
     avatarUrl?: string;
   }): Promise<UserProfile> {
-    const username = options?.username || 'klavania';
-    const email = options?.email || `${username}@github.compillo.dev`;
-    const name = options?.name || options?.username || 'GitHub Developer';
+    const username = options?.username?.trim();
+    if (!username) throw new Error('GitHub did not provide a username. Please try signing in again.');
+    const email = options?.email?.trim() || '';
+    const name = options?.name?.trim() || username;
     const avatarUrl =
       options?.avatarUrl || `https://github.com/${username}.png?size=200`;
 
     const existingIndex = this.registeredUsers.findIndex(
       (u) =>
-        u.email.toLowerCase() === email.toLowerCase() ||
+        (email && u.email.toLowerCase() === email.toLowerCase()) ||
         (u.githubUsername && u.githubUsername.toLowerCase() === username.toLowerCase())
     );
 
@@ -409,7 +399,6 @@ class AuthService {
       return this.signInWithGithub({
         username: cleanUser,
         name: cleanUser,
-        email: `${cleanUser}@github.compillo.dev`,
         avatarUrl: `https://github.com/${cleanUser}.png?size=200`,
       });
     }

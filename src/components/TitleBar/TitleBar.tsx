@@ -180,7 +180,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onShowAbout,
   onRestartRun,
   onStopRun,
-  userEmail = 'k@lavania.in',
+  userEmail = 'Guest',
   currentUser,
   onOpenDashboard,
   onOpenSignIn,

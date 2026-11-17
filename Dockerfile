@@ -1,24 +1,29 @@
-# Production Dockerfile for Free Cloud Hosting (Render, Cloud Run, Koyeb, Railway)
-FROM node:20-alpine AS builder
+# Production image for Render and other Docker hosts.
+FROM oven/bun:1.4.4 AS builder
 
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+COPY package.json bun.lock ./
+RUN bun install
 
 COPY . .
-RUN npm run build
+RUN bun run build
 
-FROM node:20-alpine AS runner
+FROM oven/bun:1.4.4 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=10000
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json ./
+COPY --from=builder /app/bun.lock ./bun.lock
+RUN bun install --production --frozen-lockfile
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public
 
-EXPOSE 3000
+EXPOSE 10000
 
-CMD ["npm", "start"]
+CMD ["bun", "dist/server.cjs"]

@@ -837,7 +837,7 @@ int main(int argc, char** argv) {
         return { ok: false, error: data.error || `HTTP ${res.status}` };
       }
       const portNum = Number(data.port);
-      const proxyUrl = getProxyUrl(portNum);
+      const proxyUrl = data.proxyUrl || getProxyUrl(portNum);
       setForwardedPorts((prev) => {
         const exists = prev.some((p) => p.port === portNum);
         if (exists) {
@@ -982,7 +982,7 @@ int main(int argc, char** argv) {
           return;
         }
         const boundPort = Number(data.port || requestedPort);
-        const proxyUrl = getProxyUrl(boundPort);
+        const proxyUrl = data.proxyUrl || getProxyUrl(boundPort);
         setForwardedPorts((prev) => {
           const exists = prev.some((p) => p.port === boundPort);
           if (exists) {

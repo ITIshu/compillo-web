@@ -5,7 +5,8 @@ import os from 'os';
 import http from 'http';
 import net from 'net';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
-import { createServer as createViteServer } from 'vite';
+import { createHash } from 'crypto';
+import { createIsolatedProjectSandbox, getOrCreateIsolatedSession, killIsolatedSandbox, runSandboxCommand, writeSandboxFile } from './server/e2bRunner';
 import {
   getAvailableCompilers,
   handleLanguageExecution,
@@ -387,13 +388,45 @@ const PYTHON_MAX_RUNTIME_MS = 180_000;
 async function startServer() {
   ensureMatplotlibConfig();
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Baseline HTTP security headers (preserves iframe preview embedding for Compillo workspace)
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+
+  // These endpoints run user-controlled code or interact with local processes.
+  // Keep them disabled on public deployments unless execution is isolated in a
+  // dedicated sandbox service. Render does not sandbox child processes for us.
+  const unsafeExecutionPrefixes = [
+    '/api/ports',
+    '/api/projects/start',
+    '/api/deploy',
+    '/api/sql/run',
+    '/api/beta/code-audit',
+    '/api/beta/site-audit',
+    '/api/beta/http-test',
+    '/api/beta/benchmark',
+    '/api/beta/leetcode/run',
+    '/api/beta/ast-parse',
+    '/api/runner',
+    '/api/python',
+  ];
+  app.use((req, res, next) => {
+    const isUnsafeExecutionRoute = unsafeExecutionPrefixes.some(
+      (prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`)
+    );
+    const isolatedRoute = req.path === '/api/runner/shell' || req.path === '/api/projects/start';
+    const runnerInfoRoute = req.path === '/api/runner/info';
+    if (isUnsafeExecutionRoute && process.env.ENABLE_UNSAFE_EXECUTION !== 'true' && !(runnerInfoRoute || (isolatedRoute && process.env.E2B_API_KEY))) {
+      res.status(503).json({
+        error: 'Code execution is disabled until an isolated runner is configured.',
+      });
+      return;
+    }
     next();
   });
 
@@ -941,6 +974,69 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
 
     if (targetPort < 1024 || targetPort > 65535 || targetPort === 3000 || targetPort === 8080 || targetPort === PORT) {
       targetPort = 5100;
+    }
+
+    if (process.env.E2B_API_KEY) {
+      let isolatedSandbox: any = null;
+      try {
+        const sandbox = isolatedSandbox = await createIsolatedProjectSandbox();
+        const projectFiles: Array<{ path: string; content: string }> = [];
+        const addLocalFiles = (dir: string, prefix = '') => {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (entry.name === 'node_modules' || entry.name === '.git' || entry.name.startsWith('.')) continue;
+            const full = path.join(dir, entry.name);
+            const relative = path.posix.join(prefix, entry.name);
+            if (entry.isDirectory()) addLocalFiles(full, relative);
+            else if (entry.isFile() && projectFiles.length < 300) {
+              const stat = fs.statSync(full);
+              if (stat.size <= MAX_CODE_BYTES) projectFiles.push({ path: relative, content: fs.readFileSync(full, 'utf8') });
+            }
+          }
+        };
+        if (Array.isArray(files) && files.length) {
+          for (const file of files.slice(0, 300)) {
+            if (file && typeof file.path === 'string' && typeof file.content === 'string' && Buffer.byteLength(file.content, 'utf8') <= MAX_CODE_BYTES) {
+              projectFiles.push({ path: file.path, content: file.content });
+            }
+          }
+        } else if (targetDir && fs.existsSync(targetDir)) addLocalFiles(targetDir);
+        if (!projectFiles.length) {
+          await killIsolatedSandbox(sandbox);
+          res.status(400).json({ error: 'No project files were provided to launch.' });
+          return;
+        }
+        for (const file of projectFiles) await writeSandboxFile(sandbox, file.path, file.content);
+
+        const preferred = requestedEntry ? [requestedEntry] : ['server.py', 'app.py', 'main.py', 'server.js', 'index.js', 'index.html'];
+        let entry = projectFiles.find((f) => preferred.includes(f.path.replace(/^\/+/, '').replace(/\\/g, '/')))?.path;
+        if (!entry) entry = projectFiles.find((f) => preferred.some((name) => f.path.endsWith(`/${name}`)))?.path;
+        const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`;
+        let command: string;
+        if (!entry || entry.endsWith('.html')) {
+          command = `nohup python3 -m http.server ${targetPort} --bind 0.0.0.0 >/tmp/compillo-server.log 2>&1 & echo $!`;
+          if (entry?.includes('/')) command = `cd ${quote(path.posix.dirname(entry))} && ${command}`;
+        } else {
+          const isNode = /\.(mjs|cjs|js)$/i.test(entry);
+          command = `nohup env PORT=${targetPort} HOST=0.0.0.0 ${isNode ? 'node' : 'python3'} ${quote(entry)} ${targetPort} >/tmp/compillo-server.log 2>&1 & echo $!`;
+        }
+        const launch = await runSandboxCommand(sandbox, command, { timeoutMs: 10_000 });
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        const host = await sandbox.getHost(targetPort);
+        const ready = await runSandboxCommand(sandbox, `curl -fsS http://127.0.0.1:${targetPort}/ >/dev/null`, { timeoutMs: 3000 }).then(() => true).catch(() => false);
+        if (!ready) {
+          const logs = await runSandboxCommand(sandbox, 'tail -n 40 /tmp/compillo-server.log 2>/dev/null', { timeoutMs: 3000 }).catch(() => ({ stdout: '' }));
+          await killIsolatedSandbox(sandbox);
+          res.status(502).json({ error: `Project did not start on port ${targetPort}. ${String(logs.stdout || launch.stderr || '').slice(0, 2000)}` });
+          return;
+        }
+        res.json({ ok: true, port: targetPort, label: label || 'Workspace Server', proxyUrl: `https://${host}/`, isolated: true });
+        return;
+      } catch (err: any) {
+        if (isolatedSandbox) await killIsolatedSandbox(isolatedSandbox);
+        console.error('E2B project launch failed:', err?.message || err);
+        res.status(502).json({ error: err?.message || 'Failed to start project in isolated runner' });
+        return;
+      }
     }
 
     let spawnCwd = targetDir;
@@ -1494,7 +1590,7 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
 
   // Universal Free Multi-Language Runner API (Python, C, C++, Java, Rust, Go, TS, JS, Shell, SQL, etc.)
   app.get('/api/runner/info', (req, res) => {
-    res.json(getAvailableCompilers());
+    res.json({ ...getAvailableCompilers(), isolatedRunner: Boolean(process.env.E2B_API_KEY) });
   });
 
   app.post('/api/runner/run', (req, res) => {
@@ -1517,8 +1613,8 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
     res.json({ success });
   });
 
-  // Real Workspace Bash Shell Executor (sandboxed temp workspace per session)
-  app.post('/api/runner/shell', (req, res) => {
+  // Execute terminal commands only inside an E2B Firecracker microVM.
+  app.post('/api/runner/shell', async (req, res) => {
     if (!checkExecutionRateLimit(req, 45)) {
       res.status(429).json({ error: 'Rate limit exceeded. Please wait before executing another command.' });
       return;
@@ -1528,242 +1624,45 @@ a{display:inline-block;margin-top:16px;padding:9px 16px;border-radius:8px;backgr
       res.status(400).json({ error: 'Missing or oversized shell command' });
       return;
     }
-
-    const safeSessionId =
-      typeof sessionId === 'string' && /^[a-zA-Z0-9_-]{4,64}$/.test(sessionId)
-        ? sessionId
-        : `sh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-
-    let session = shellSessions.get(safeSessionId);
-    if (!session || !fs.existsSync(session.rootDir)) {
-      if (shellSessions.size >= 40) {
-        const oldestKey = shellSessions.keys().next().value;
-        if (oldestKey) {
-          const oldSession = shellSessions.get(oldestKey);
-          shellSessions.delete(oldestKey);
-          if (oldSession) {
-            try {
-              fs.rmSync(oldSession.rootDir, { recursive: true, force: true });
-            } catch {
-              // ignore
-            }
-          }
-        }
-      }
-      const rootDir = path.join(os.tmpdir(), `compillo_shell_${safeSessionId}`);
-      fs.mkdirSync(rootDir, { recursive: true });
-      session = { id: safeSessionId, rootDir, cwd: rootDir, lastUsed: Date.now() };
-      shellSessions.set(safeSessionId, session);
+    if (!process.env.E2B_API_KEY) {
+      res.status(503).json({ error: 'Isolated runner is not configured. Add E2B_API_KEY to the Render service environment.' });
+      return;
     }
-    session.lastUsed = Date.now();
 
+    const rawId = typeof sessionId === 'string' && /^[a-zA-Z0-9_-]{4,64}$/.test(sessionId)
+      ? sessionId : `sh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const ownerKey = createHash('sha256').update(`${req.ip}:${rawId}`).digest('hex');
     try {
-      // Expose /app/applet/projects inside shell workspace as "projects" symlink so users can `cd projects/calculator` directly in Terminal
-      const hostProjectsDir = path.resolve(process.cwd(), 'projects');
-      const shellProjectsLink = path.join(session.rootDir, 'projects');
-      try {
-        if (fs.existsSync(hostProjectsDir)) {
-          let linkExists = false;
-          try {
-            fs.lstatSync(shellProjectsLink);
-            linkExists = true;
-          } catch {
-            linkExists = false;
-          }
-          if (!linkExists) {
-            fs.symlinkSync(hostProjectsDir, shellProjectsLink, 'dir');
-          }
-        }
-      } catch {
-        // ignore symlink failure
-      }
-
-      // Materialize workspace files cleanly into rootDir
+      const session = await getOrCreateIsolatedSession(ownerKey);
       if (Array.isArray(files)) {
-        for (const f of files.slice(0, 300)) {
-          if (!f || typeof f.path !== 'string' || typeof f.content !== 'string') continue;
-          if (Buffer.byteLength(f.content, 'utf-8') > MAX_CODE_BYTES) continue;
-          const rel = f.path.replace(/^\/+/, '');
-          if (!rel || rel.includes('..')) continue;
-          const targetPath = path.resolve(session.rootDir, rel);
-          if (!targetPath.startsWith(session.rootDir + path.sep)) continue;
-          fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-          fs.writeFileSync(targetPath, f.content, 'utf-8');
+        for (const file of files.slice(0, 300)) {
+          if (!file || typeof file.path !== 'string' || typeof file.content !== 'string') continue;
+          if (Buffer.byteLength(file.content, 'utf-8') > MAX_CODE_BYTES) continue;
+          await writeSandboxFile(session.sandbox, file.path, file.content);
         }
       }
-
-      if (!fs.existsSync(session.cwd)) {
-        session.cwd = session.rootDir;
-      }
-
       const pwdMarker = `__COMPILLO_PWD_${Date.now()}__:`;
-      const wrappedCmd = `${command}\n__COMPILLO_RC=$?\necho ""\necho "${pwdMarker}$(pwd -P)"\nexit $__COMPILLO_RC`;
-
-      const child = spawn('bash', ['-c', wrappedCmd], {
-        cwd: session.cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          HOME: session.rootDir,
-          TERM: 'xterm-256color',
-        },
-      });
-
-      let stdout = '';
-      let stderr = '';
-      let timedOut = false;
-      let finished = false;
-      let exitGraceTimer: NodeJS.Timeout | null = null;
-
-      const timer = setTimeout(() => {
-        timedOut = true;
-        try {
-          child.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-        finalizeResponse(124);
-      }, 15000);
-
-      child.stdout.on('data', (d: Buffer) => {
-        if (stdout.length < 200_000) stdout += d.toString('utf-8');
-      });
-
-      child.stderr.on('data', (d: Buffer) => {
-        if (stderr.length < 200_000) stderr += d.toString('utf-8');
-      });
-
-      const finalizeResponse = async (exitCode: number | null) => {
-        if (finished) return;
-        finished = true;
-        clearTimeout(timer);
-        if (exitGraceTimer) clearTimeout(exitGraceTimer);
-
-        const realRootDir = fs.existsSync(session!.rootDir)
-          ? fs.realpathSync(session!.rootDir)
-          : session!.rootDir;
-        const realProjectsDir = fs.existsSync(hostProjectsDir)
-          ? fs.realpathSync(hostProjectsDir)
-          : hostProjectsDir;
-
-        // Extract updated cwd from marker
-        const lines = stdout.split('\n');
-        const cleanedLines: string[] = [];
-        for (const line of lines) {
-          if (line.startsWith(pwdMarker)) {
-            const nextPwd = line.slice(pwdMarker.length).trim();
-            const resolved = path.resolve(nextPwd);
-            const resolvedReal = fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved;
-            if (
-              resolvedReal === realRootDir ||
-              resolvedReal.startsWith(realRootDir + path.sep) ||
-              resolvedReal === realProjectsDir ||
-              resolvedReal.startsWith(realProjectsDir + path.sep)
-            ) {
-              if (fs.existsSync(resolvedReal)) {
-                session!.cwd = resolvedReal;
-              }
-            } else {
-              session!.cwd = session!.rootDir;
-            }
-          } else {
-            cleanedLines.push(line);
-          }
-        }
-
-        const cleanStdout = cleanedLines.join('\n').replace(/\n+$/, '');
-        const cwdReal = fs.existsSync(session!.cwd) ? fs.realpathSync(session!.cwd) : session!.cwd;
-        let cwdRelative = '';
-        if (cwdReal === realProjectsDir || cwdReal.startsWith(realProjectsDir + path.sep)) {
-          const relProj = path.relative(realProjectsDir, cwdReal).replace(/\\/g, '/');
-          cwdRelative = relProj ? `projects/${relProj}` : 'projects';
-        } else {
-          cwdRelative = path.relative(realRootDir, cwdReal).replace(/\\/g, '/');
-        }
-
-        // Scan workspace root to sync text files modified/created by shell commands
-        const syncedFiles: Array<{ path: string; name: string; content: string }> = [];
-        const walk = (dir: string) => {
-          if (syncedFiles.length >= 300) return;
-          const entries = fs.readdirSync(dir, { withFileTypes: true });
-          for (const entry of entries) {
-            if (
-              entry.name === 'node_modules' ||
-              entry.name === '.git' ||
-              entry.name.startsWith('.') ||
-              entry.isSymbolicLink()
-            ) {
-              continue;
-            }
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-              walk(fullPath);
-            } else if (entry.isFile()) {
-              try {
-                const stat = fs.statSync(fullPath);
-                if (stat.size <= 200_000) {
-                  const buf = fs.readFileSync(fullPath);
-                  if (!buf.includes(0)) {
-                    const relPath = '/' + path.relative(session!.rootDir, fullPath).replace(/\\/g, '/');
-                    syncedFiles.push({
-                      path: relPath,
-                      name: entry.name,
-                      content: buf.toString('utf-8'),
-                    });
-                  }
-                }
-              } catch {
-                // ignore unreadable files
-              }
-            }
-          }
-        };
-        try {
-          walk(session!.rootDir);
-        } catch {
-          // ignore
-        }
-
-        const listeningPorts = await scanListeningTcpPorts().catch(() => []);
-
-        if (!res.headersSent) {
-          res.json({
-            sessionId: session!.id,
-            stdout: timedOut
-              ? `${cleanStdout}\n[Command timed out after 15s. Tip: Append "&" to keep servers running in background, e.g. python3 server.py &]`.trim()
-              : cleanStdout,
-            stderr: stderr.replace(/\n+$/, ''),
-            exitCode: timedOut ? 124 : exitCode ?? 0,
-            cwdRelative,
-            syncedFiles,
-            listeningPorts: listeningPorts.map((p) => p.port),
-          });
-        }
-      };
-
-      child.on('error', (err) => {
-        clearTimeout(timer);
-        if (exitGraceTimer) clearTimeout(exitGraceTimer);
-        if (!finished && !res.headersSent) {
-          finished = true;
-          res.status(500).json({ error: err.message });
-        }
-      });
-
-      // Allow backgrounded servers (e.g. `python3 -m http.server 8000 &`) to keep running after bash exits
-      child.on('exit', (exitCode) => {
-        exitGraceTimer = setTimeout(() => {
-          finalizeResponse(exitCode);
-        }, 450);
-      });
-
-      child.on('close', (exitCode) => {
-        finalizeResponse(exitCode);
+      const wrapped = `${command}\n__COMPILLO_RC=$?\nprintf "\\n${pwdMarker}%s\\n" "$PWD"\nexit $__COMPILLO_RC`;
+      const result = await runSandboxCommand(session.sandbox, wrapped, { cwd: session.cwd, timeoutMs: 15_000 });
+      const markerLine = String(result.stdout || '').split('\n').find((line: string) => line.startsWith(pwdMarker));
+      const sandboxCwd = markerLine?.slice(pwdMarker.length).trim();
+      if (sandboxCwd?.startsWith('/home/user')) session.cwd = sandboxCwd;
+      const fullStdout = String(result.stdout || '').split('\n').filter((line: string) => !line.startsWith(pwdMarker)).join('\n').trimEnd();
+      const cleanStdout = fullStdout.length > 200_000 ? `${fullStdout.slice(0, 200_000)}\n[Output truncated at 200 KB]` : fullStdout;
+      const stderr = String(result.stderr || '').trimEnd();
+      const portsResult = await runSandboxCommand(session.sandbox, "ss -ltnH 2>/dev/null | awk '{print $4}' | sed -E 's/.*:([0-9]+)$/\\1/' | sort -nu", { cwd: session.cwd, timeoutMs: 3000 }).catch(() => ({ stdout: '' }));
+      const listeningPorts = String(portsResult.stdout || '').split(/\s+/).map(Number).filter((port: number) => Number.isInteger(port) && port >= 1024 && port <= 65535);
+      res.json({
+        sessionId: rawId,
+        stdout: cleanStdout,
+        stderr: stderr.length > 200_000 ? `${stderr.slice(0, 200_000)}\n[Output truncated at 200 KB]` : stderr,
+        exitCode: typeof result.exitCode === 'number' ? result.exitCode : 0,
+        cwdRelative: session.cwd.replace(/^\/home\/user\/?/, ''),
+        syncedFiles: [],
+        listeningPorts,
       });
     } catch (err: any) {
-      if (!res.headersSent) {
-        res.status(500).json({ error: err?.message || 'Shell execution failed' });
-      }
+      res.status(502).json({ error: err?.message || 'Isolated shell execution failed' });
     }
   });
 
@@ -2579,6 +2478,7 @@ except Exception:
 
   // Vite middleware in dev or static files in production
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: false, ws: false },
       appType: 'spa',

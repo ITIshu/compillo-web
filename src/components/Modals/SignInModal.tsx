@@ -36,16 +36,13 @@ export const SignInModal: React.FC<SignInModalProps> = ({
   const [activeTab, setActiveTab] = useState<'google' | 'github' | 'email'>('google');
 
   // Google inputs
-  const [googleEmail, setGoogleEmail] = useState('k@lavania.in');
-  const [googleName, setGoogleName] = useState('K. Lavania');
-  const [googleUniv, setGoogleUniv] = useState('Rajasthan Technical University (RTU)');
   const [googleOauthConfigured, setGoogleOauthConfigured] = useState(false);
   const [showGoogleConfig, setShowGoogleConfig] = useState(false);
   const [googleClientIdInput, setGoogleClientIdInput] = useState('');
   const [googleClientSecretInput, setGoogleClientSecretInput] = useState('');
 
   // GitHub inputs
-  const [ghUsername, setGhUsername] = useState('klavania');
+  const [ghUsername, setGhUsername] = useState('');
   const [ghToken, setGhToken] = useState('');
   const [githubMode, setGithubMode] = useState<'username' | 'token' | 'oauth'>('username');
   const [githubOauthConfigured, setGithubOauthConfigured] = useState(false);
@@ -118,28 +115,6 @@ export const SignInModal: React.FC<SignInModalProps> = ({
           setErrorMessage(err.message || fallbackErr.message || 'Google OAuth failed');
         }
       }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleGoogleDirectSignIn = async () => {
-    setIsSubmitting(true);
-    setErrorMessage(null);
-    try {
-      const email = googleEmail.trim() || 'k@lavania.in';
-      const name = googleName.trim() || 'K. Lavania';
-      const user = await authService.signInWithGoogle({
-        email,
-        name,
-        university: googleUniv.trim() || 'Rajasthan Technical University (RTU)',
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
-      });
-      gameSound.playLevelClear();
-      onSuccess?.(user);
-      onClose();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Google sign-in failed');
     } finally {
       setIsSubmitting(false);
     }
@@ -442,100 +417,6 @@ export const SignInModal: React.FC<SignInModalProps> = ({
                 </p>
               </div>
 
-              {/* Quick continue / 1-click alternative */}
-              <div
-                className="p-3.5 rounded-xl border bg-black/5 dark:bg-white/5 space-y-2.5"
-                style={{ borderColor: currentTheme.ui.sideBarBorder }}
-              >
-                <div className="flex items-center gap-3">
-                  <img
-                    src="https://api.dicebear.com/7.x/bottts/svg?seed=k-lavania"
-                    alt="K. Lavania avatar"
-                    className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/30 p-1 object-cover"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <span>K. Lavania</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-400 font-semibold">
-                        Instant Continue
-                      </span>
-                    </h3>
-                    <p className="text-[11px] opacity-75 truncate">k@lavania.in • RTU Scholar</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    onClick={handleGoogleDirectSignIn}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 text-sky-400 border border-sky-500/30 hover:border-sky-500/50 transition-all shrink-0"
-                  >
-                    Quick Log In
-                  </button>
-                </div>
-              </div>
-
-              {/* Custom Google account inputs */}
-              <div className="space-y-3 pt-1">
-                <div className="flex items-center gap-2 text-[11px] uppercase font-bold tracking-wider opacity-60">
-                  <div className="flex-1 h-px bg-current opacity-20" />
-                  <span>Or enter custom Google account</span>
-                  <div className="flex-1 h-px bg-current opacity-20" />
-                </div>
-
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <label className="text-[11px] font-semibold opacity-75 block mb-1">
-                      Google Email Address
-                    </label>
-                    <input
-                      type="email"
-                      value={googleEmail}
-                      onChange={(e) => setGoogleEmail(e.target.value)}
-                      placeholder="user@gmail.com"
-                      className="w-full px-3 py-2 rounded-xl border bg-black/10 dark:bg-white/10 outline-none text-xs"
-                      style={{ borderColor: currentTheme.ui.sideBarBorder }}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[11px] font-semibold opacity-75 block mb-1">
-                        Display Name
-                      </label>
-                      <input
-                        type="text"
-                        value={googleName}
-                        onChange={(e) => setGoogleName(e.target.value)}
-                        placeholder="Your Name"
-                        className="w-full px-3 py-2 rounded-xl border bg-black/10 dark:bg-white/10 outline-none text-xs"
-                        style={{ borderColor: currentTheme.ui.sideBarBorder }}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-semibold opacity-75 block mb-1">
-                        University
-                      </label>
-                      <input
-                        type="text"
-                        value={googleUniv}
-                        onChange={(e) => setGoogleUniv(e.target.value)}
-                        placeholder="RTU, AKTU, VTU..."
-                        className="w-full px-3 py-2 rounded-xl border bg-black/10 dark:bg-white/10 outline-none text-xs"
-                        style={{ borderColor: currentTheme.ui.sideBarBorder }}
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={isSubmitting || !googleEmail.trim()}
-                    onClick={handleGoogleDirectSignIn}
-                    className="w-full py-2.5 rounded-xl font-bold text-xs bg-sky-500 hover:bg-sky-600 text-white flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-50"
-                  >
-                    <span>Sign In with this Google Account</span>
-                  </button>
-                </div>
-              </div>
-
               {/* Accordion for Google OAuth credentials */}
               <div className="pt-2 border-t" style={{ borderColor: currentTheme.ui.sideBarBorder }}>
                 <button
@@ -685,7 +566,7 @@ export const SignInModal: React.FC<SignInModalProps> = ({
                         type="text"
                         value={ghUsername}
                         onChange={(e) => setGhUsername(e.target.value)}
-                        placeholder="e.g. klavania, torvalds, octocat"
+                        placeholder="e.g. torvalds, octocat"
                         className="flex-1 px-3 py-2 rounded-xl border bg-black/10 dark:bg-white/10 outline-none text-xs font-mono"
                         style={{ borderColor: currentTheme.ui.sideBarBorder }}
                       />

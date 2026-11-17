@@ -1,0 +1,7 @@
+.git
+node_modules
+dist
+.task-bun
+.task-tmp
+.task-bun-install
+*.tgz
